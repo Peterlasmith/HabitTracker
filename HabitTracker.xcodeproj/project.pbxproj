@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		000000000000000000000121 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000225 /* Assets.xcassets */; };
 		000000000000000000000101 /* HabitTrackerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000201 /* HabitTrackerApp.swift */; };
 		000000000000000000000102 /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000202 /* AppEnvironment.swift */; };
 		000000000000000000000103 /* AppRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000203 /* AppRootView.swift */; };
@@ -71,6 +72,7 @@
 		000000000000000000000222 /* HabitTrackerWidget-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "HabitTrackerWidget-Info.plist"; sourceTree = "<group>"; };
 		000000000000000000000223 /* HabitTracker.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HabitTracker.entitlements; sourceTree = "<group>"; };
 		000000000000000000000224 /* HabitTrackerWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HabitTrackerWidget.entitlements; sourceTree = "<group>"; };
+		000000000000000000000225 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		000000000000000000000501 /* HabitTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = HabitTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		000000000000000000000502 /* HabitTrackerWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; path = HabitTrackerWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		000000000000000000000503 /* HabitTrackerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = HabitTrackerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -128,6 +130,7 @@
 				000000000000000000000013 /* Features */,
 				000000000000000000000014 /* Models */,
 				000000000000000000000015 /* Repositories */,
+				000000000000000000000018 /* Resources */,
 				000000000000000000000016 /* Services */,
 				000000000000000000000017 /* Support */,
 			);
@@ -237,6 +240,14 @@
 				000000000000000000000224 /* HabitTrackerWidget.entitlements */,
 			);
 			path = Support;
+			sourceTree = "<group>";
+		};
+		000000000000000000000018 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000225 /* Assets.xcassets */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -362,6 +373,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				000000000000000000000121 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -443,12 +455,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = HabitTracker/Support/HabitTracker.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = PL3TQ7WFB8;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_TESTABILITY = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -459,7 +472,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.HabitTracker;
+				PRODUCT_BUNDLE_IDENTIFIER = com.done.HabitTracker;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -472,12 +485,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = HabitTracker/Support/HabitTracker.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = PL3TQ7WFB8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "HabitTracker/Support/HabitTracker-Info.plist";
@@ -487,7 +501,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.HabitTracker;
+				PRODUCT_BUNDLE_IDENTIFIER = com.done.HabitTracker;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
