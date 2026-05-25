@@ -4,20 +4,24 @@ protocol HabitRepository {
     func fetchHabits() async throws -> [Habit]
     func saveHabit(_ habit: Habit) async throws
     func archiveHabit(_ habit: Habit) async throws
+    func deleteHabit(_ habit: Habit) async throws
     func sync() async throws -> [Habit]
 }
 
 protocol CheckInRepository {
     func fetchCompletions() async throws -> [HabitCompletion]
     func recordCompletion(_ completion: HabitCompletion) async throws
+    func deleteCompletions(for habit: Habit) async throws
     func sync() async throws -> [HabitCompletion]
 }
 
 protocol HabitRemoteDataSource: Sendable {
     func fetchHabits(authHeader: String?) async throws -> [Habit]
     func upsertHabit(_ habit: Habit, authHeader: String?) async throws
+    func deleteHabit(_ habit: Habit, authHeader: String?) async throws
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion]
     func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws
+    func deleteCompletions(for habit: Habit, authHeader: String?) async throws
 }
 
 actor DefaultHabitRepository: HabitRepository {
@@ -53,6 +57,15 @@ actor DefaultHabitRepository: HabitRepository {
         try await saveHabit(archived)
     }
 
+    func deleteHabit(_ habit: Habit) async throws {
+        var habits = try await localStore.readHabits()
+        habits.removeAll { $0.id == habit.id }
+        try await localStore.writeHabits(habits)
+
+        let authHeader = await MainActor.run { authService.authorizationHeader() }
+        try? await remote.deleteHabit(habit, authHeader: authHeader)
+    }
+
     func sync() async throws -> [Habit] {
         let localHabits = try await localStore.readHabits()
         let authHeader = await MainActor.run { authService.authorizationHeader() }
@@ -84,6 +97,7 @@ actor DefaultCheckInRepository: CheckInRepository {
     private let localStore: LocalStore
     private let remote: any HabitRemoteDataSource
     private let authService: AuthService
+    private let calendar = Calendar.autoupdatingCurrent
 
     init(localStore: LocalStore, remote: any HabitRemoteDataSource, authService: AuthService) {
         self.localStore = localStore
@@ -97,14 +111,18 @@ actor DefaultCheckInRepository: CheckInRepository {
 
     func recordCompletion(_ completion: HabitCompletion) async throws {
         var completions = try await localStore.readCompletions()
-        if let index = completions.firstIndex(where: { $0.id == completion.id }) {
-            completions[index] = completion
-        } else {
-            completions.append(completion)
-        }
+        completions = replaceCompletion(completion, in: completions)
         try await localStore.writeCompletions(completions)
         let authHeader = await MainActor.run { authService.authorizationHeader() }
         try? await remote.upsertCompletion(completion, authHeader: authHeader)
+    }
+
+    func deleteCompletions(for habit: Habit) async throws {
+        let remainingCompletions = try await localStore.readCompletions().filter { $0.habitId != habit.id }
+        try await localStore.writeCompletions(remainingCompletions)
+
+        let authHeader = await MainActor.run { authService.authorizationHeader() }
+        try? await remote.deleteCompletions(for: habit, authHeader: authHeader)
     }
 
     func sync() async throws -> [HabitCompletion] {
@@ -122,16 +140,57 @@ actor DefaultCheckInRepository: CheckInRepository {
     }
 
     private func mergeCompletions(_ localCompletions: [HabitCompletion], with remoteCompletions: [HabitCompletion]) -> [HabitCompletion] {
-        let merged = remoteCompletions.reduce(into: [UUID: HabitCompletion]()) { partialResult, completion in
-            partialResult[completion.id] = completion
+        let merged = remoteCompletions.reduce(into: [CompletionKey: HabitCompletion]()) { partialResult, completion in
+            partialResult[completionKey(for: completion)] = completion
         }
 
         let mergedWithLocal = localCompletions.reduce(into: merged) { partialResult, completion in
-            partialResult[completion.id] = completion
+            let key = completionKey(for: completion)
+            if let existing = partialResult[key] {
+                partialResult[key] = preferredCompletion(between: existing, and: completion)
+            } else {
+                partialResult[key] = completion
+            }
         }
 
-        return mergedWithLocal.values.sorted { $0.date < $1.date }
+        return mergedWithLocal.values.sorted { lhs, rhs in
+            if lhs.date == rhs.date {
+                return lhs.createdAt < rhs.createdAt
+            }
+            return lhs.date < rhs.date
+        }
     }
+
+    private func replaceCompletion(_ completion: HabitCompletion, in completions: [HabitCompletion]) -> [HabitCompletion] {
+        let key = completionKey(for: completion)
+        var updated = completions.filter { completionKey(for: $0) != key }
+        updated.append(completion)
+        return updated.sorted { lhs, rhs in
+            if lhs.date == rhs.date {
+                return lhs.createdAt < rhs.createdAt
+            }
+            return lhs.date < rhs.date
+        }
+    }
+
+    private func preferredCompletion(between lhs: HabitCompletion, and rhs: HabitCompletion) -> HabitCompletion {
+        if lhs.createdAt != rhs.createdAt {
+            return lhs.createdAt > rhs.createdAt ? lhs : rhs
+        }
+        return lhs.id.uuidString > rhs.id.uuidString ? lhs : rhs
+    }
+
+    private func completionKey(for completion: HabitCompletion) -> CompletionKey {
+        CompletionKey(
+            habitId: completion.habitId,
+            day: calendar.startOfDay(for: completion.date)
+        )
+    }
+}
+
+private struct CompletionKey: Hashable {
+    let habitId: UUID
+    let day: Date
 }
 
 actor LocalStore {
@@ -205,10 +264,22 @@ struct SupabaseHabitRemoteDataSource {
     func upsertHabit(_ habit: Habit, authHeader: String?) async throws {
         _ = try await performRequest(
             path: "rest/v1/habits",
+            queryItems: [URLQueryItem(name: "on_conflict", value: "id")],
             method: "POST",
             authHeader: authHeader,
             preferHeader: "resolution=merge-duplicates",
             body: [HabitRow(habit: habit)]
+        ) as [HabitRow]
+    }
+
+    func deleteHabit(_ habit: Habit, authHeader: String?) async throws {
+        _ = try await performRequest(
+            path: "rest/v1/habits",
+            queryItems: [
+                URLQueryItem(name: "id", value: "eq.\(habit.id.uuidString)")
+            ],
+            method: "DELETE",
+            authHeader: authHeader
         ) as [HabitRow]
     }
 
@@ -220,10 +291,22 @@ struct SupabaseHabitRemoteDataSource {
     func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws {
         _ = try await performRequest(
             path: "rest/v1/habit_completions",
+            queryItems: [URLQueryItem(name: "on_conflict", value: "id")],
             method: "POST",
             authHeader: authHeader,
             preferHeader: "resolution=merge-duplicates",
             body: [HabitCompletionRow(completion: completion)]
+        ) as [HabitCompletionRow]
+    }
+
+    func deleteCompletions(for habit: Habit, authHeader: String?) async throws {
+        _ = try await performRequest(
+            path: "rest/v1/habit_completions",
+            queryItems: [
+                URLQueryItem(name: "habit_id", value: "eq.\(habit.id.uuidString)")
+            ],
+            method: "DELETE",
+            authHeader: authHeader
         ) as [HabitCompletionRow]
     }
 

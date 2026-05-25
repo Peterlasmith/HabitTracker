@@ -127,53 +127,114 @@ final class AppEnvironment: ObservableObject {
         await self.determinePhase()
     }
 
-    func createOrUpdateHabit(_ habit: Habit) async {
-        await self.runBusyTask {
-            try await self.habitRepository.saveHabit(habit)
-            let fetchedHabits = try await self.habitRepository.fetchHabits()
-            await MainActor.run { self.habits = fetchedHabits }
-            try await self.reminderService.rescheduleNotifications(for: fetchedHabits)
-            await self.widgetSyncService.publish(habits: fetchedHabits, completions: self.completions)
+    func createOrUpdateHabit(_ habit: Habit) async -> Bool {
+        let previousHabits = self.habits
+        let updatedHabits = self.upsertHabit(habit, in: previousHabits)
+
+        self.habits = updatedHabits
+
+        let habitCopy = habit
+        let updatedHabitsCopy = updatedHabits
+        return await self.runBusyTask { [habitCopy, updatedHabitsCopy] in
+            try await self.habitRepository.saveHabit(habitCopy)
+            try await self.reminderService.rescheduleNotifications(for: updatedHabitsCopy)
+            await self.widgetSyncService.publish(habits: updatedHabitsCopy, completions: self.completions)
             self.analyticsService.track(.createdHabit)
-        }
+            return true
+        } ?? { [previousHabits] in
+            self.habits = previousHabits
+            return false
+        }()
     }
 
     func archiveHabit(_ habit: Habit) async {
-        await self.runBusyTask {
-            try await self.habitRepository.archiveHabit(habit)
-            let fetchedHabits = try await self.habitRepository.fetchHabits()
-            await MainActor.run { self.habits = fetchedHabits }
-            try await self.reminderService.rescheduleNotifications(for: fetchedHabits)
-            await self.widgetSyncService.publish(habits: fetchedHabits, completions: self.completions)
-        }
+        let previousHabits = self.habits
+        var archivedHabit = habit
+        archivedHabit.archivedAt = .now
+        let updatedHabits = self.upsertHabit(archivedHabit, in: previousHabits)
+
+        self.habits = updatedHabits
+
+        let updatedHabitsCopy = updatedHabits
+        let archivedHabitCopy = archivedHabit
+        await self.runBusyTask { [updatedHabitsCopy, archivedHabitCopy] in
+            try await self.habitRepository.archiveHabit(archivedHabitCopy)
+            try await self.reminderService.rescheduleNotifications(for: updatedHabitsCopy)
+            await self.widgetSyncService.publish(habits: updatedHabitsCopy, completions: self.completions)
+        } ?? { [previousHabits] in
+            self.habits = previousHabits
+        }()
+    }
+
+    func deleteHabit(_ habit: Habit) async {
+        let previousHabits = self.habits
+        let previousCompletions = self.completions
+        let updatedHabits = previousHabits.filter { $0.id != habit.id }
+        let updatedCompletions = previousCompletions.filter { $0.habitId != habit.id }
+
+        self.habits = updatedHabits
+        self.completions = updatedCompletions
+
+        let updatedHabitsCopy = updatedHabits
+        let updatedCompletionsCopy = updatedCompletions
+        let habitCopy = habit
+        await self.runBusyTask { [updatedHabitsCopy, updatedCompletionsCopy, habitCopy] in
+            try await self.habitRepository.deleteHabit(habitCopy)
+            try await self.checkInRepository.deleteCompletions(for: habitCopy)
+            try await self.reminderService.rescheduleNotifications(for: updatedHabitsCopy)
+            self.widgetSyncService.publish(habits: updatedHabitsCopy, completions: updatedCompletionsCopy)
+        } ?? { [previousHabits, previousCompletions] in
+            self.habits = previousHabits
+            self.completions = previousCompletions
+        }()
+    }
+
+    func restoreHabit(_ habit: Habit) async {
+        let previousHabits = self.habits
+        var restoredHabit = habit
+        restoredHabit.archivedAt = nil
+        let updatedHabits = self.upsertHabit(restoredHabit, in: previousHabits)
+
+        self.habits = updatedHabits
+
+        let updatedHabitsCopy = updatedHabits
+        let restoredHabitCopy = restoredHabit
+        await self.runBusyTask { [restoredHabitCopy, updatedHabitsCopy] in
+            try await self.habitRepository.saveHabit(restoredHabitCopy)
+            try await self.reminderService.rescheduleNotifications(for: updatedHabitsCopy)
+            await self.widgetSyncService.publish(habits: updatedHabitsCopy, completions: self.completions)
+        } ?? { [previousHabits] in
+            self.habits = previousHabits
+        }()
     }
 
     func recordCompletion(for habit: Habit, count: Int, note: String = "", date: Date = .now) async {
         guard let user = self.currentUser else { return }
 
+        let startOfDay = Calendar.current.startOfDay(for: date)
+        let existing = self.completion(for: habit, on: startOfDay)
+        let completion = HabitCompletion(
+            id: existing?.id ?? UUID(),
+            habitId: habit.id,
+            userId: user.id,
+            date: startOfDay,
+            count: count,
+            note: note,
+            createdAt: existing?.createdAt ?? .now
+        )
+        let previousCompletions = self.completions
+        let optimisticCompletions = upsertCompletion(completion, in: previousCompletions)
+
+        self.completions = optimisticCompletions
+        self.widgetSyncService.publish(habits: self.habits, completions: optimisticCompletions)
+
         await self.runBusyTask {
-            let startOfDay = Calendar.current.startOfDay(for: date)
-            let existing = await self.completions.first {
-                $0.habitId == habit.id && Calendar.current.isDate($0.date, inSameDayAs: startOfDay)
-            }
-            let completion = HabitCompletion(
-                id: existing?.id ?? UUID(),
-                habitId: habit.id,
-                userId: user.id,
-                date: startOfDay,
-                count: count,
-                note: note,
-                createdAt: existing?.createdAt ?? .now
-            )
             try await self.checkInRepository.recordCompletion(completion)
-            let fetchedCompletions = try await self.checkInRepository.fetchCompletions()
-            let currentHabits: [Habit] = await MainActor.run {
-                self.completions = fetchedCompletions
-                return self.habits
-            }
-            self.widgetSyncService.publish(habits: currentHabits, completions: fetchedCompletions)
             self.analyticsService.track(.completedHabit)
-        }
+        } ?? { [previousCompletions] in
+            self.completions = previousCompletions
+            self.widgetSyncService.publish(habits: self.habits, completions: previousCompletions)
+        }()
     }
 
     @MainActor
@@ -185,18 +246,19 @@ final class AppEnvironment: ObservableObject {
             .map { habit in
                 HabitWithProgress(
                     habit: habit,
-                    completion: todayCompletions.first {
-                        $0.habitId == habit.id && Calendar.current.isDate($0.date, inSameDayAs: date)
-                    }
+                    completion: latestCompletion(for: habit.id, on: date, from: todayCompletions)
                 )
             }
     }
 
     @MainActor
     func completionHistory(for habit: Habit) -> [HabitCompletion] {
-        self.completions
-            .filter { $0.habitId == habit.id }
-            .sorted { $0.date > $1.date }
+        deduplicatedCompletions(for: habit.id, from: self.completions)
+    }
+
+    @MainActor
+    func completion(for habit: Habit, on date: Date) -> HabitCompletion? {
+        latestCompletion(for: habit.id, on: date, from: self.completions)
     }
 
     private func syncAll() async throws {
@@ -206,9 +268,9 @@ final class AppEnvironment: ObservableObject {
         let completions = try await syncedCompletions
         await MainActor.run {
             self.habits = habits
-            self.completions = completions
+            self.completions = self.normalizedCompletions(completions)
         }
-        self.widgetSyncService.publish(habits: habits, completions: completions)
+        self.widgetSyncService.publish(habits: habits, completions: self.normalizedCompletions(completions))
     }
 
     private func refreshLocalState() async {
@@ -217,9 +279,9 @@ final class AppEnvironment: ObservableObject {
             let fetchedCompletions = try await self.checkInRepository.fetchCompletions()
             await MainActor.run {
                 self.habits = fetchedHabits
-                self.completions = fetchedCompletions
+                self.completions = self.normalizedCompletions(fetchedCompletions)
             }
-            self.widgetSyncService.publish(habits: fetchedHabits, completions: fetchedCompletions)
+            self.widgetSyncService.publish(habits: fetchedHabits, completions: self.normalizedCompletions(fetchedCompletions))
         } catch {
             await MainActor.run {
                 self.habits = []
@@ -239,7 +301,26 @@ final class AppEnvironment: ObservableObject {
         }
     }
 
-    private func runBusyTask(_ operation: @escaping @Sendable () async throws -> Void) async {
+    private func upsertHabit(_ habit: Habit, in habits: [Habit]) -> [Habit] {
+        var updatedHabits = habits
+        if let index = updatedHabits.firstIndex(where: { $0.id == habit.id }) {
+            updatedHabits[index] = habit
+        } else {
+            updatedHabits.append(habit)
+        }
+        return updatedHabits.sorted { $0.createdAt < $1.createdAt }
+    }
+
+    private func upsertCompletion(_ completion: HabitCompletion, in completions: [HabitCompletion]) -> [HabitCompletion] {
+        var updated = normalizedCompletions(completions).filter {
+            !($0.habitId == completion.habitId && Calendar.current.isDate($0.date, inSameDayAs: completion.date))
+        }
+        updated.append(completion)
+        return normalizedCompletions(updated)
+    }
+
+    @discardableResult
+    private func runBusyTask<T>(_ operation: @escaping @Sendable () async throws -> T) async -> T? {
         await MainActor.run {
             self.errorMessage = nil
             self.isBusy = true
@@ -251,9 +332,56 @@ final class AppEnvironment: ObservableObject {
         }
 
         do {
-            try await operation()
+            return try await operation()
         } catch {
             await MainActor.run { self.errorMessage = error.localizedDescription }
+            return nil
         }
+    }
+
+    @MainActor
+    private func deduplicatedCompletions(for habitId: UUID, from completions: [HabitCompletion]) -> [HabitCompletion] {
+        normalizedCompletions(completions)
+            .filter { $0.habitId == habitId }
+    }
+
+    @MainActor
+    private func latestCompletion(for habitId: UUID, on date: Date, from completions: [HabitCompletion]) -> HabitCompletion? {
+        let calendar = Calendar.current
+        return normalizedCompletions(completions)
+            .filter { $0.habitId == habitId && calendar.isDate($0.date, inSameDayAs: date) }
+            .max { lhs, rhs in
+                if lhs.createdAt == rhs.createdAt {
+                    return lhs.id.uuidString < rhs.id.uuidString
+                }
+                return lhs.createdAt < rhs.createdAt
+            }
+    }
+
+    private nonisolated func normalizedCompletions(_ completions: [HabitCompletion]) -> [HabitCompletion] {
+        let calendar = Calendar.current
+        let grouped = completions.reduce(into: [String: HabitCompletion]()) { result, completion in
+            let day = calendar.startOfDay(for: completion.date)
+            let key = "\(completion.habitId.uuidString)-\(day.timeIntervalSinceReferenceDate)"
+            if let existing = result[key] {
+                result[key] = preferredCompletion(between: existing, and: completion)
+            } else {
+                result[key] = completion
+            }
+        }
+
+        return grouped.values.sorted { lhs, rhs in
+            if lhs.date == rhs.date {
+                return lhs.createdAt > rhs.createdAt
+            }
+            return lhs.date > rhs.date
+        }
+    }
+
+    private nonisolated func preferredCompletion(between lhs: HabitCompletion, and rhs: HabitCompletion) -> HabitCompletion {
+        if lhs.createdAt == rhs.createdAt {
+            return lhs.id.uuidString > rhs.id.uuidString ? lhs : rhs
+        }
+        return lhs.createdAt > rhs.createdAt ? lhs : rhs
     }
 }

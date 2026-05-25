@@ -94,7 +94,7 @@ struct AuthView: View {
                     .fill(AppTheme.accent)
                     .frame(width: 14, height: 14)
 
-                Text("Cadence")
+                Text("HabitClaw")
                     .font(AppTheme.serif(size: 22, weight: .semibold))
                     .foregroundStyle(AppTheme.textPrimary)
             }

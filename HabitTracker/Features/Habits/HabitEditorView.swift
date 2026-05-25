@@ -43,8 +43,9 @@ struct HabitEditorView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Save") {
                     Task {
-                        await saveHabit()
-                        dismiss()
+                        if await saveHabit() {
+                            dismiss()
+                        }
                     }
                 }
                 .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -229,15 +230,19 @@ struct HabitEditorView: View {
         }
     }
 
-    private func saveHabit() async {
-        guard let currentUser = environment.currentUser else { return }
+    private func saveHabit() async -> Bool {
+        guard let currentUser = environment.currentUser else {
+            environment.errorMessage = "Your session expired. Sign in again to create a habit."
+            return false
+        }
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let timeComponents = remindersEnabled ? Calendar.current.dateComponents([.hour, .minute], from: reminderDate) : nil
         let schedule: HabitSchedule = isDaily ? .daily : .weekdays(selectedWeekdays.isEmpty ? Set([.monday]) : selectedWeekdays)
 
         let habit = Habit(
             id: existingHabit?.id ?? UUID(),
             userId: currentUser.id,
-            name: name,
+            name: trimmedName,
             emojiOrIcon: emoji,
             color: color,
             schedule: schedule,
@@ -252,6 +257,6 @@ struct HabitEditorView: View {
             environment.analyticsService.track(.enabledReminder)
         }
 
-        await environment.createOrUpdateHabit(habit)
+        return await environment.createOrUpdateHabit(habit)
     }
 }

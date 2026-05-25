@@ -11,7 +11,7 @@ struct OnboardingView: View {
                         .fill(AppTheme.accent)
                         .frame(width: 18, height: 18)
 
-                    Text("Cadence")
+                    Text("HabitClaw")
                         .font(AppTheme.serif(size: 22, weight: .semibold))
                         .foregroundStyle(AppTheme.textPrimary)
                 }

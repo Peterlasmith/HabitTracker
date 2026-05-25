@@ -31,7 +31,7 @@ create table if not exists public.habit_completions (
         on delete cascade
 );
 
-create unique index if not exists habits_user_created_at_idx
+create index if not exists habits_user_created_at_idx
     on public.habits (user_id, created_at);
 
 create unique index if not exists habit_completions_habit_date_idx

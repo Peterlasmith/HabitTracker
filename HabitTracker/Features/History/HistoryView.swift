@@ -200,9 +200,7 @@ struct TrendsView: View {
     }
 
     private func completion(for habit: Habit, on date: Date) -> HabitCompletion? {
-        environment.completions.first {
-            $0.habitId == habit.id && calendar.isDate($0.date, inSameDayAs: date)
-        }
+        environment.completion(for: habit, on: date)
     }
 }
 

@@ -2,7 +2,9 @@ import SwiftUI
 
 struct HabitDetailView: View {
     @EnvironmentObject private var environment: AppEnvironment
+    @Environment(\.dismiss) private var dismiss
     @State private var showingEditor = false
+    @State private var showingDeleteConfirmation = false
 
     let habit: Habit
 
@@ -83,11 +85,27 @@ struct HabitDetailView: View {
                 Button("Edit") { showingEditor = true }
 
                 Button(role: .destructive) {
-                    Task { await environment.archiveHabit(habit) }
+                    showingDeleteConfirmation = true
                 } label: {
-                    Image(systemName: "archivebox")
+                    Image(systemName: "trash")
                 }
             }
+        }
+        .confirmationDialog(
+            "Delete \(habit.name)?",
+            isPresented: $showingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Habit", role: .destructive) {
+                Task {
+                    await environment.deleteHabit(habit)
+                    dismiss()
+                }
+            }
+
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently removes only this habit and its check-ins.")
         }
         .sheet(isPresented: $showingEditor) {
             NavigationStack {

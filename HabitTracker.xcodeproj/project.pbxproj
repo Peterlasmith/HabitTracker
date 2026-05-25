@@ -21,6 +21,7 @@
 		000000000000000000000111 /* Dashboard/TodayDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000211 /* Dashboard/TodayDashboardView.swift */; };
 		000000000000000000000112 /* Habits/HabitEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000212 /* Habits/HabitEditorView.swift */; };
 		000000000000000000000113 /* Habits/HabitDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000213 /* Habits/HabitDetailView.swift */; };
+		000000000000000000000122 /* Habits/HabitManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000226 /* Habits/HabitManagerView.swift */; };
 		000000000000000000000114 /* History/HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000214 /* History/HistoryView.swift */; };
 		000000000000000000000115 /* Settings/SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000215 /* Settings/SettingsView.swift */; };
 		000000000000000000000116 /* Purchase/PurchaseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000216 /* Purchase/PurchaseView.swift */; };
@@ -61,6 +62,7 @@
 		000000000000000000000211 /* Dashboard/TodayDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Dashboard/TodayDashboardView.swift; sourceTree = "<group>"; };
 		000000000000000000000212 /* Habits/HabitEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Habits/HabitEditorView.swift; sourceTree = "<group>"; };
 		000000000000000000000213 /* Habits/HabitDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Habits/HabitDetailView.swift; sourceTree = "<group>"; };
+		000000000000000000000226 /* Habits/HabitManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Habits/HabitManagerView.swift; sourceTree = "<group>"; };
 		000000000000000000000214 /* History/HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = History/HistoryView.swift; sourceTree = "<group>"; };
 		000000000000000000000215 /* Settings/SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings/SettingsView.swift; sourceTree = "<group>"; };
 		000000000000000000000216 /* Purchase/PurchaseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Purchase/PurchaseView.swift; sourceTree = "<group>"; };
@@ -199,6 +201,7 @@
 				000000000000000000000211 /* Dashboard/TodayDashboardView.swift */,
 				000000000000000000000212 /* Habits/HabitEditorView.swift */,
 				000000000000000000000213 /* Habits/HabitDetailView.swift */,
+				000000000000000000000226 /* Habits/HabitManagerView.swift */,
 				000000000000000000000214 /* History/HistoryView.swift */,
 				000000000000000000000215 /* Settings/SettingsView.swift */,
 				000000000000000000000216 /* Purchase/PurchaseView.swift */,
@@ -404,6 +407,7 @@
 				000000000000000000000111 /* Dashboard/TodayDashboardView.swift in Sources */,
 				000000000000000000000112 /* Habits/HabitEditorView.swift in Sources */,
 				000000000000000000000113 /* Habits/HabitDetailView.swift in Sources */,
+				000000000000000000000122 /* Habits/HabitManagerView.swift in Sources */,
 				000000000000000000000114 /* History/HistoryView.swift in Sources */,
 				000000000000000000000115 /* Settings/SettingsView.swift in Sources */,
 				000000000000000000000116 /* Purchase/PurchaseView.swift in Sources */,

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var environment: AppEnvironment
+    @State private var showingHabitManager = false
 
     var body: some View {
         ScrollView {
@@ -80,6 +81,13 @@ struct SettingsView: View {
                     Text("\(environment.completions.count) total check-ins recorded")
                         .font(AppTheme.sans(size: 13))
                         .foregroundStyle(AppTheme.textSecondary)
+
+                    Button("Manage Habits") {
+                        showingHabitManager = true
+                    }
+                    .font(AppTheme.sans(size: 16, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary)
+                    .padding(.top, 4)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .appCard(fill: AppTheme.surface)
@@ -89,5 +97,10 @@ struct SettingsView: View {
         }
         .scrollIndicators(.hidden)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingHabitManager) {
+            NavigationStack {
+                HabitManagerView()
+            }
+        }
     }
 }

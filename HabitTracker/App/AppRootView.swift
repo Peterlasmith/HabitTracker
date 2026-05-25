@@ -10,7 +10,7 @@ struct AppRootView: View {
             switch environment.phase {
             case .launching:
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Cadence")
+                    Text("HabitClaw")
                         .font(AppTheme.serif(size: 30, weight: .semibold))
                         .foregroundStyle(AppTheme.textPrimary)
 

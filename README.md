@@ -1,6 +1,6 @@
-# HabitTracker
+# HabitClaw
 
-Native SwiftUI iPhone habit tracker scaffold with:
+Native SwiftUI iPhone habit tracker scaffold for HabitClaw with:
 
 - email/password auth backed by Supabase REST APIs
 - local JSON cache for habits and completions
