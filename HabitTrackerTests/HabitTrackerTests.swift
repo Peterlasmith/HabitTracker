@@ -361,7 +361,6 @@ final class HabitTrackerTests: XCTestCase {
         let checkInRepository = StubCheckInRepository()
         let environment = AppEnvironment(
             authService: SupabaseAuthService(),
-            purchaseService: PurchaseService(),
             reminderService: NoopReminderService(),
             widgetSyncService: WidgetSyncService(),
             analyticsService: AnalyticsService(),
@@ -413,7 +412,6 @@ final class HabitTrackerTests: XCTestCase {
         let checkInRepository = StubCheckInRepository()
         let environment = AppEnvironment(
             authService: SupabaseAuthService(),
-            purchaseService: PurchaseService(),
             reminderService: NoopReminderService(),
             widgetSyncService: WidgetSyncService(),
             analyticsService: AnalyticsService(),
@@ -454,7 +452,6 @@ final class HabitTrackerTests: XCTestCase {
         let checkInRepository = StaleFetchCheckInRepository()
         let environment = AppEnvironment(
             authService: SupabaseAuthService(),
-            purchaseService: PurchaseService(),
             reminderService: NoopReminderService(),
             widgetSyncService: WidgetSyncService(),
             analyticsService: AnalyticsService(),

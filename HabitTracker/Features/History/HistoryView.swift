@@ -50,7 +50,7 @@ struct TrendsView: View {
     }
 
     private func overviewCards(snapshot: TrendSnapshot) -> some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .top, spacing: 10) {
             trendStatCard(
                 title: "Last 14 days",
                 value: "\(snapshot.currentCompletionRate)%",
@@ -80,8 +80,9 @@ struct TrendsView: View {
             Text(detail)
                 .font(AppTheme.sans(size: 12))
                 .foregroundStyle(AppTheme.textSecondary)
+                .lineLimit(2)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 140, alignment: .topLeading)
         .appCard()
     }
 
@@ -93,7 +94,7 @@ struct TrendsView: View {
                 .textCase(.uppercase)
                 .tracking(1.1)
 
-            HStack(alignment: .bottom, spacing: 8) {
+            HStack(alignment: .bottom, spacing: 4) {
                 ForEach(snapshot.days) { day in
                     VStack(spacing: 8) {
                         ZStack(alignment: .bottom) {
@@ -109,10 +110,14 @@ struct TrendsView: View {
                         Text(shortLabel(for: day.date))
                             .font(AppTheme.sans(size: 11, weight: .semibold))
                             .foregroundStyle(AppTheme.textSecondary)
+                            .lineLimit(1)
 
                         Text(day.eligible == 0 ? "0" : "\(Int((day.rate * 100).rounded()))")
                             .font(AppTheme.sans(size: 10))
                             .foregroundStyle(AppTheme.textSecondary)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                     }
                     .frame(maxWidth: .infinity)
                 }

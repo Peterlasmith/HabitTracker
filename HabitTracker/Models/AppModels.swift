@@ -132,12 +132,6 @@ struct HabitCompletion: Codable, Equatable, Identifiable {
     }
 }
 
-enum PurchaseEntitlement: Equatable {
-    case unknown
-    case locked
-    case unlocked(Date?)
-}
-
 struct WidgetHabitSummary: Codable, Identifiable, Equatable {
     let id: UUID
     let name: String

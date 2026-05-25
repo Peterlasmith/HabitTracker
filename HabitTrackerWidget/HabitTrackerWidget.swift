@@ -2,7 +2,7 @@ import SwiftUI
 import WidgetKit
 
 private enum WidgetSharedKeys {
-    static let appGroup = "group.com.example.HabitTracker.shared"
+    static let appGroup = "group.com.done.HabitTracker.shared"
     static let summaryKey = "widget.summary"
 }
 

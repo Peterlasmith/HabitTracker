@@ -1,6 +1,5 @@
 import Foundation
 import OSLog
-import StoreKit
 import UserNotifications
 import WidgetKit
 
@@ -29,7 +28,7 @@ struct DefaultReminderService: ReminderService {
 
     func rescheduleNotifications(for habits: [Habit]) async throws {
         let center = UNUserNotificationCenter.current()
-        let identifiers = habits.map { "habit-\($0.id.uuidString)" }
+        let identifiers = habits.flatMap(notificationIdentifiers(for:))
         center.removePendingNotificationRequests(withIdentifiers: identifiers)
 
         for habit in habits where habit.reminderTime != nil && !habit.isArchived {
@@ -65,64 +64,16 @@ struct DefaultReminderService: ReminderService {
             }
         }
     }
-}
 
-@MainActor
-final class PurchaseService: ObservableObject {
-    @Published private(set) var products: [Product] = []
-    @Published private(set) var entitlement: PurchaseEntitlement = .unknown
-
-    let productID = "com.example.HabitTracker.fullunlock"
-
-    func loadProducts() async {
-        do {
-            products = try await Product.products(for: [productID])
-        } catch {
-            AppLogger.purchase.error("Failed to load products: \(error.localizedDescription)")
-        }
-    }
-
-    func refreshEntitlements() async {
-        for await verificationResult in Transaction.currentEntitlements {
-            guard case .verified(let transaction) = verificationResult else { continue }
-            if transaction.productID == productID {
-                entitlement = .unlocked(transaction.purchaseDate)
-                return
-            }
-        }
-        entitlement = .locked
-    }
-
-    func purchase() async throws {
-        guard let product = products.first else {
-            throw AppError.configuration("Store product not found.")
-        }
-
-        let result = try await product.purchase()
-        switch result {
-        case .success(let verificationResult):
-            guard case .verified(let transaction) = verificationResult else {
-                throw AppError.network("Unable to verify purchase.")
-            }
-            entitlement = .unlocked(transaction.purchaseDate)
-            await transaction.finish()
-        case .pending:
-            throw AppError.network("Purchase is pending approval.")
-        case .userCancelled:
-            break
-        @unknown default:
-            break
-        }
-    }
-
-    func restorePurchases() async throws {
-        try await AppStore.sync()
-        await refreshEntitlements()
+    private func notificationIdentifiers(for habit: Habit) -> [String] {
+        let baseIdentifier = "habit-\(habit.id.uuidString)"
+        let weekdayIdentifiers = Weekday.allCases.map { "\(baseIdentifier)-\($0.rawValue)" }
+        return [baseIdentifier] + weekdayIdentifiers
     }
 }
 
 struct WidgetSyncService {
-    static let appGroup = "group.com.example.HabitTracker.shared"
+    static let appGroup = "group.com.done.HabitTracker.shared"
     static let summaryKey = "widget.summary"
 
     func publish(habits: [Habit], completions: [HabitCompletion], date: Date = .now) {
@@ -176,15 +127,12 @@ enum AnalyticsEvent: String {
     case completedOnboarding
     case createdAccount
     case signedIn
-    case purchasedUnlock
-    case failedPurchase
     case createdHabit
     case enabledReminder
     case completedHabit
 }
 
 enum AppLogger {
-    static let app = Logger(subsystem: "com.example.HabitTracker", category: "app")
-    static let analytics = Logger(subsystem: "com.example.HabitTracker", category: "analytics")
-    static let purchase = Logger(subsystem: "com.example.HabitTracker", category: "purchase")
+    static let app = Logger(subsystem: "com.done.HabitTracker", category: "app")
+    static let analytics = Logger(subsystem: "com.done.HabitTracker", category: "analytics")
 }

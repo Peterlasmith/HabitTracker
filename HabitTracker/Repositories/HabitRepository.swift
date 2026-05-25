@@ -391,6 +391,40 @@ struct HabitRow: Codable {
         self.archivedAt = habit.archivedAt
     }
 
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        userId = try container.decode(UUID.self, forKey: .userId)
+        name = try container.decode(String.self, forKey: .name)
+        emojiOrIcon = try container.decode(String.self, forKey: .emojiOrIcon)
+        color = try container.decode(String.self, forKey: .color)
+        scheduleType = try container.decode(String.self, forKey: .scheduleType)
+        scheduleWeekdays = try container.decode([Int].self, forKey: .scheduleWeekdays)
+        targetType = try container.decode(String.self, forKey: .targetType)
+        targetCount = try container.decode(Int.self, forKey: .targetCount)
+        reminderHour = try container.decodeIfPresent(Int.self, forKey: .reminderHour)
+        reminderMinute = try container.decodeIfPresent(Int.self, forKey: .reminderMinute)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        archivedAt = try container.decodeIfPresent(Date.self, forKey: .archivedAt)
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(userId, forKey: .userId)
+        try container.encode(name, forKey: .name)
+        try container.encode(emojiOrIcon, forKey: .emojiOrIcon)
+        try container.encode(color, forKey: .color)
+        try container.encode(scheduleType, forKey: .scheduleType)
+        try container.encode(scheduleWeekdays, forKey: .scheduleWeekdays)
+        try container.encode(targetType, forKey: .targetType)
+        try container.encode(targetCount, forKey: .targetCount)
+        try container.encode(reminderHour, forKey: .reminderHour)
+        try container.encode(reminderMinute, forKey: .reminderMinute)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(archivedAt, forKey: .archivedAt)
+    }
+
     var habit: Habit {
         Habit(
             id: id,

@@ -24,8 +24,7 @@
 		000000000000000000000122 /* Habits/HabitManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000226 /* Habits/HabitManagerView.swift */; };
 		000000000000000000000114 /* History/HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000214 /* History/HistoryView.swift */; };
 		000000000000000000000115 /* Settings/SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000215 /* Settings/SettingsView.swift */; };
-		000000000000000000000116 /* Purchase/PurchaseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000216 /* Purchase/PurchaseView.swift */; };
-		000000000000000000000117 /* HabitTrackerWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000217 /* HabitTrackerWidget.swift */; };
+			000000000000000000000117 /* HabitTrackerWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000217 /* HabitTrackerWidget.swift */; };
 		000000000000000000000118 /* HabitTrackerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000218 /* HabitTrackerTests.swift */; };
 		000000000000000000000119 /* RepositoryMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000219 /* RepositoryMappingTests.swift */; };
 		000000000000000000000120 /* HabitTrackerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000220 /* HabitTrackerUITests.swift */; };
@@ -65,8 +64,7 @@
 		000000000000000000000226 /* Habits/HabitManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Habits/HabitManagerView.swift; sourceTree = "<group>"; };
 		000000000000000000000214 /* History/HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = History/HistoryView.swift; sourceTree = "<group>"; };
 		000000000000000000000215 /* Settings/SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings/SettingsView.swift; sourceTree = "<group>"; };
-		000000000000000000000216 /* Purchase/PurchaseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Purchase/PurchaseView.swift; sourceTree = "<group>"; };
-		000000000000000000000217 /* HabitTrackerWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HabitTrackerWidget.swift; sourceTree = "<group>"; };
+			000000000000000000000217 /* HabitTrackerWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HabitTrackerWidget.swift; sourceTree = "<group>"; };
 		000000000000000000000218 /* HabitTrackerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HabitTrackerTests.swift; sourceTree = "<group>"; };
 		000000000000000000000219 /* RepositoryMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryMappingTests.swift; sourceTree = "<group>"; };
 		000000000000000000000220 /* HabitTrackerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HabitTrackerUITests.swift; sourceTree = "<group>"; };
@@ -204,9 +202,8 @@
 				000000000000000000000226 /* Habits/HabitManagerView.swift */,
 				000000000000000000000214 /* History/HistoryView.swift */,
 				000000000000000000000215 /* Settings/SettingsView.swift */,
-				000000000000000000000216 /* Purchase/PurchaseView.swift */,
-			);
-			path = Features;
+				);
+				path = Features;
 			sourceTree = "<group>";
 		};
 		000000000000000000000014 /* Models */ = {
@@ -410,9 +407,8 @@
 				000000000000000000000122 /* Habits/HabitManagerView.swift in Sources */,
 				000000000000000000000114 /* History/HistoryView.swift in Sources */,
 				000000000000000000000115 /* Settings/SettingsView.swift in Sources */,
-				000000000000000000000116 /* Purchase/PurchaseView.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
+				);
+				runOnlyForDeploymentPostprocessing = 0;
 		};
 		000000000000000000000703 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -522,12 +518,12 @@
 				CODE_SIGN_ENTITLEMENTS = HabitTracker/Support/HabitTrackerWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = PL3TQ7WFB8;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "HabitTracker/Support/HabitTrackerWidget-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.HabitTracker.widget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.done.HabitTracker.widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -544,12 +540,12 @@
 				CODE_SIGN_ENTITLEMENTS = HabitTracker/Support/HabitTrackerWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = PL3TQ7WFB8;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "HabitTracker/Support/HabitTrackerWidget-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.HabitTracker.widget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.done.HabitTracker.widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -572,7 +568,7 @@
 					"@loader_path/Frameworks",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.HabitTrackerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.done.HabitTrackerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -595,7 +591,7 @@
 					"@loader_path/Frameworks",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.HabitTrackerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.done.HabitTrackerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -612,7 +608,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.HabitTrackerUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.done.HabitTrackerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -629,7 +625,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.HabitTrackerUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.done.HabitTrackerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;

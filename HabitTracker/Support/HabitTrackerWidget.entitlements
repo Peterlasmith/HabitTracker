@@ -4,7 +4,7 @@
 <dict>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.com.example.HabitTracker.shared</string>
+		<string>group.com.done.HabitTracker.shared</string>
 	</array>
 </dict>
 </plist>

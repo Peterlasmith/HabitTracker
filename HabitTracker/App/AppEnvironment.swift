@@ -21,7 +21,6 @@ final class AppEnvironment: ObservableObject {
     let habitRepository: HabitRepository
     let checkInRepository: CheckInRepository
     let reminderService: ReminderService
-    let purchaseService: PurchaseService
     let widgetSyncService: WidgetSyncService
     let analyticsService: AnalyticsService
 
@@ -31,7 +30,6 @@ final class AppEnvironment: ObservableObject {
     // All properties are initialized on the main actor due to the enclosing class annotation.
     init(
         authService: SupabaseAuthService,
-        purchaseService: PurchaseService,
         reminderService: ReminderService,
         widgetSyncService: WidgetSyncService,
         analyticsService: AnalyticsService,
@@ -40,7 +38,6 @@ final class AppEnvironment: ObservableObject {
         checkInRepository: CheckInRepository? = nil
     ) {
         self.authService = authService
-        self.purchaseService = purchaseService
         self.reminderService = reminderService
         self.widgetSyncService = widgetSyncService
         self.analyticsService = analyticsService
@@ -55,7 +52,6 @@ final class AppEnvironment: ObservableObject {
     convenience init() {
         self.init(
             authService: SupabaseAuthService(),
-            purchaseService: PurchaseService(),
             reminderService: DefaultReminderService(),
             widgetSyncService: WidgetSyncService(),
             analyticsService: AnalyticsService(),
@@ -117,14 +113,6 @@ final class AppEnvironment: ObservableObject {
             }
             await self.determinePhase()
         }
-    }
-
-    func purchaseUnlock() async {
-        await self.determinePhase()
-    }
-
-    func restorePurchases() async {
-        await self.determinePhase()
     }
 
     func createOrUpdateHabit(_ habit: Habit) async -> Bool {
