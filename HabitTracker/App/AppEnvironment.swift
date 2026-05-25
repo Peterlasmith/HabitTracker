@@ -7,13 +7,11 @@ final class AppEnvironment: ObservableObject {
         case launching
         case onboarding
         case authentication
-        case paywall
         case ready
     }
 
     @Published var phase: Phase = .launching
     @Published var currentUser: AppUser?
-    @Published var entitlement: PurchaseEntitlement = .unknown
     @Published var habits: [Habit] = []
     @Published var completions: [HabitCompletion] = []
     @Published var errorMessage: String?
@@ -67,9 +65,6 @@ final class AppEnvironment: ObservableObject {
 
     func bootstrap() async {
         await MainActor.run { self.isBusy = true }
-        await self.purchaseService.loadProducts()
-        await self.purchaseService.refreshEntitlements()
-        await MainActor.run { self.entitlement = self.purchaseService.entitlement }
 
         do {
             let user = try await self.authService.restoreSession()
@@ -125,25 +120,11 @@ final class AppEnvironment: ObservableObject {
     }
 
     func purchaseUnlock() async {
-        await self.runBusyTask {
-            do {
-                try await self.purchaseService.purchase()
-                await MainActor.run { self.entitlement = self.purchaseService.entitlement }
-                self.analyticsService.track(.purchasedUnlock)
-                await self.determinePhase()
-            } catch {
-                self.analyticsService.track(.failedPurchase)
-                throw error
-            }
-        }
+        await self.determinePhase()
     }
 
     func restorePurchases() async {
-        await self.runBusyTask {
-            try await self.purchaseService.restorePurchases()
-            await MainActor.run { self.entitlement = self.purchaseService.entitlement }
-            await self.determinePhase()
-        }
+        await self.determinePhase()
     }
 
     func createOrUpdateHabit(_ habit: Habit) async {
@@ -253,10 +234,8 @@ final class AppEnvironment: ObservableObject {
             await MainActor.run { self.phase = .onboarding }
         } else if self.currentUser == nil {
             await MainActor.run { self.phase = .authentication }
-        } else if case .unlocked = self.purchaseService.entitlement {
-            await MainActor.run { self.phase = .ready }
         } else {
-            await MainActor.run { self.phase = .paywall }
+            await MainActor.run { self.phase = .ready }
         }
     }
 
@@ -278,4 +257,3 @@ final class AppEnvironment: ObservableObject {
         }
     }
 }
-

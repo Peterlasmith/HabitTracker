@@ -4,34 +4,48 @@ struct OnboardingView: View {
     @EnvironmentObject private var environment: AppEnvironment
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 28) {
-            Spacer()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(AppTheme.accent)
+                        .frame(width: 18, height: 18)
 
-            Text("Build streaks that feel calm, not punishing.")
-                .font(.system(size: 38, weight: .bold, design: .rounded))
-                .foregroundStyle(AppTheme.textPrimary)
+                    Text("Cadence")
+                        .font(AppTheme.serif(size: 22, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary)
+                }
 
-            VStack(alignment: .leading, spacing: 16) {
-                onboardingRow(icon: "checklist", title: "Flexible habits", subtitle: "Daily or selected weekdays, binary or count-based.")
-                onboardingRow(icon: "bell.badge.fill", title: "Helpful reminders", subtitle: "Set local notifications that match your real schedule.")
-                onboardingRow(icon: "chart.line.uptrend.xyaxis", title: "Real momentum", subtitle: "See streaks, history, and widget progress at a glance.")
+                Text("Build streaks that feel calm, not punishing.")
+                    .font(AppTheme.serif(size: 40, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary)
+
+                Text("Track the routines you want to return to, see your rhythm across the week, and keep progress visible without making it feel heavy.")
+                    .font(AppTheme.sans(size: 15))
+                    .foregroundStyle(AppTheme.textSecondary)
+
+                VStack(alignment: .leading, spacing: 16) {
+                    onboardingRow(icon: "checklist", title: "Flexible habits", subtitle: "Daily or selected weekdays, binary or count-based.")
+                    onboardingRow(icon: "bell.badge.fill", title: "Helpful reminders", subtitle: "Set local notifications that match your real schedule.")
+                    onboardingRow(icon: "chart.line.uptrend.xyaxis", title: "Real momentum", subtitle: "See streaks, trends, and weekly progress at a glance.")
+                }
+
+                Button {
+                    environment.completeOnboarding()
+                } label: {
+                    Text("Start Building Habits")
+                        .font(AppTheme.sans(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 18)
+                        .background(AppTheme.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                }
             }
-
-            Button {
-                environment.completeOnboarding()
-            } label: {
-                Text("Start Building Habits")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 18)
-                    .background(AppTheme.accent)
-                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            }
-
-            Spacer()
+            .padding(24)
+            .frame(maxWidth: 480, alignment: .leading)
         }
-        .padding(24)
+        .scrollIndicators(.hidden)
     }
 
     private func onboardingRow(icon: String, title: String, subtitle: String) -> some View {
@@ -43,10 +57,10 @@ struct OnboardingView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.headline)
+                    .font(AppTheme.serif(size: 20, weight: .semibold))
                     .foregroundStyle(AppTheme.textPrimary)
                 Text(subtitle)
-                    .font(.subheadline)
+                    .font(AppTheme.sans(size: 14))
                     .foregroundStyle(AppTheme.textSecondary)
             }
         }

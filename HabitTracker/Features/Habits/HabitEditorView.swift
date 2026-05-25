@@ -21,45 +21,21 @@ struct HabitEditorView: View {
     }
 
     var body: some View {
-        Form {
-            Section("Identity") {
-                TextField("Habit name", text: $name)
-                TextField("Emoji or symbol", text: $emoji)
-
-                Picker("Color", selection: $color) {
-                    ForEach(HabitColor.allCases) { color in
-                        Text(color.rawValue.capitalized).tag(color)
-                    }
-                }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                previewCard
+                identitySection
+                goalSection
+                scheduleSection
+                reminderSection
             }
-
-            Section("Goal") {
-                Picker("Target type", selection: $targetType) {
-                    ForEach(HabitTargetType.allCases) { type in
-                        Text(type.rawValue.capitalized).tag(type)
-                    }
-                }
-
-                if targetType == .count {
-                    Stepper("Target count: \(targetCount)", value: $targetCount, in: 1...20)
-                }
-            }
-
-            Section("Schedule") {
-                Toggle("Every day", isOn: $isDaily)
-                if !isDaily {
-                    weekdayPicker
-                }
-            }
-
-            Section("Reminder") {
-                Toggle("Enable reminder", isOn: $remindersEnabled)
-                if remindersEnabled {
-                    DatePicker("Time", selection: $reminderDate, displayedComponents: .hourAndMinute)
-                }
-            }
+            .padding(20)
+            .padding(.bottom, 28)
         }
+        .scrollIndicators(.hidden)
         .navigationTitle(existingHabit == nil ? "New Habit" : "Edit Habit")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button("Cancel") { dismiss() }
@@ -77,20 +53,157 @@ struct HabitEditorView: View {
         .onAppear(perform: populateIfNeeded)
     }
 
-    private var weekdayPicker: some View {
-        HStack {
-            ForEach(Weekday.allCases) { day in
-                Button(day.label) {
-                    if selectedWeekdays.contains(day) {
-                        selectedWeekdays.remove(day)
-                    } else {
-                        selectedWeekdays.insert(day)
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(selectedWeekdays.contains(day) ? AppTheme.accent : .gray.opacity(0.3))
+    private var previewCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("\(emoji) \(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "New habit" : name)")
+                .font(AppTheme.serif(size: 30, weight: .semibold))
+                .foregroundStyle(AppTheme.textPrimary)
+
+            Text(previewSubtitle)
+                .font(AppTheme.sans(size: 14))
+                .foregroundStyle(AppTheme.textSecondary)
+
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(color.color)
+                    .frame(width: 14, height: 14)
+
+                Text(targetType == .binary ? "Complete once per scheduled day" : "\(targetCount) check-ins per scheduled day")
+                    .font(AppTheme.sans(size: 13))
+                    .foregroundStyle(AppTheme.textSecondary)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard()
+    }
+
+    private var identitySection: some View {
+        sectionCard(title: "Identity") {
+            VStack(spacing: 12) {
+                TextField("Habit name", text: $name)
+                    .appInput()
+
+                TextField("Emoji or symbol", text: $emoji)
+                    .appInput()
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Color")
+                        .font(AppTheme.sans(size: 13, weight: .semibold))
+                        .foregroundStyle(AppTheme.textSecondary)
+
+                    HStack(spacing: 10) {
+                        ForEach(HabitColor.allCases) { swatch in
+                            Button {
+                                color = swatch
+                            } label: {
+                                Circle()
+                                    .fill(swatch.color)
+                                    .frame(width: 28, height: 28)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(color == swatch ? AppTheme.textPrimary : .clear, lineWidth: 2)
+                                            .padding(-5)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var goalSection: some View {
+        sectionCard(title: "Goal") {
+            VStack(spacing: 14) {
+                Picker("Target type", selection: $targetType) {
+                    ForEach(HabitTargetType.allCases) { type in
+                        Text(type.rawValue.capitalized).tag(type)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                if targetType == .count {
+                    Stepper("Target count: \(targetCount)", value: $targetCount, in: 1...20)
+                        .font(AppTheme.sans(size: 16, weight: .medium))
+                        .foregroundStyle(AppTheme.textPrimary)
+                }
+            }
+        }
+    }
+
+    private var scheduleSection: some View {
+        sectionCard(title: "Schedule") {
+            VStack(alignment: .leading, spacing: 14) {
+                Picker("Frequency", selection: $isDaily) {
+                    Text("Daily").tag(true)
+                    Text("Custom").tag(false)
+                }
+                .pickerStyle(.segmented)
+
+                if !isDaily {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 48), spacing: 8)], spacing: 8) {
+                        ForEach(Weekday.allCases) { day in
+                            Button(day.label) {
+                                if selectedWeekdays.contains(day) {
+                                    selectedWeekdays.remove(day)
+                                } else {
+                                    selectedWeekdays.insert(day)
+                                }
+                            }
+                            .font(AppTheme.sans(size: 14, weight: .semibold))
+                            .foregroundStyle(selectedWeekdays.contains(day) ? .white : AppTheme.textPrimary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(selectedWeekdays.contains(day) ? AppTheme.accent : AppTheme.surface)
+                            .clipShape(Capsule())
+                            .overlay(
+                                Capsule()
+                                    .stroke(selectedWeekdays.contains(day) ? AppTheme.accent : AppTheme.border, lineWidth: 1)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var reminderSection: some View {
+        sectionCard(title: "Reminder") {
+            VStack(alignment: .leading, spacing: 14) {
+                Toggle("Enable reminder", isOn: $remindersEnabled)
+                    .font(AppTheme.sans(size: 16, weight: .medium))
+                    .tint(AppTheme.accent)
+
+                if remindersEnabled {
+                    DatePicker("Time", selection: $reminderDate, displayedComponents: .hourAndMinute)
+                        .font(AppTheme.sans(size: 16))
+                        .foregroundStyle(AppTheme.textPrimary)
+                }
+            }
+        }
+    }
+
+    private var previewSubtitle: String {
+        if isDaily {
+            return "Shows up every day."
+        }
+        let selected = selectedWeekdays.sorted().map(\.label).joined(separator: ", ")
+        return selected.isEmpty ? "Choose at least one day." : "Scheduled for \(selected)."
+    }
+
+    private func sectionCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(title)
+                .font(AppTheme.sans(size: 11, weight: .semibold))
+                .foregroundStyle(AppTheme.textSecondary)
+                .textCase(.uppercase)
+                .tracking(1.1)
+
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard(fill: AppTheme.surface)
     }
 
     private func populateIfNeeded() {

@@ -4,29 +4,90 @@ struct SettingsView: View {
     @EnvironmentObject private var environment: AppEnvironment
 
     var body: some View {
-        List {
-            Section("Account") {
-                Text(environment.currentUser?.email ?? "Not signed in")
-                Button("Restore Purchases") {
-                    Task { await environment.restorePurchases() }
-                }
-                Button("Sign Out", role: .destructive) {
-                    Task { await environment.signOut() }
-                }
-            }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Settings")
+                        .font(AppTheme.serif(size: 34, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary)
 
-            Section("Notifications") {
-                Button("Enable Reminder Permission") {
-                    Task { _ = try? await environment.reminderService.requestAuthorization() }
+                    Text("Keep reminders, account access, and your daily setup feeling simple.")
+                        .font(AppTheme.sans(size: 14))
+                        .foregroundStyle(AppTheme.textSecondary)
                 }
-            }
 
-            Section("Release Readiness") {
-                Text("StoreKit 2 unlock, Supabase REST auth, local JSON cache, and widget sync are scaffolded.")
-                Text("Next step after opening in Xcode: replace bundle ids, app group, Supabase keys, and product id.")
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Account")
+                        .font(AppTheme.sans(size: 11, weight: .semibold))
+                        .foregroundStyle(AppTheme.textSecondary)
+                        .textCase(.uppercase)
+                        .tracking(1.1)
+
+                    Text(environment.currentUser?.email ?? "Not signed in")
+                        .font(AppTheme.serif(size: 22, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary)
+
+                    Button("Sign Out", role: .destructive) {
+                        Task { await environment.signOut() }
+                    }
+                    .font(AppTheme.sans(size: 16, weight: .semibold))
+                    .foregroundStyle(AppTheme.error)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .appCard()
+
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Notifications")
+                        .font(AppTheme.sans(size: 11, weight: .semibold))
+                        .foregroundStyle(AppTheme.textSecondary)
+                        .textCase(.uppercase)
+                        .tracking(1.1)
+
+                    Text("Enable reminders so your check-ins show up at the right moment.")
+                        .font(AppTheme.sans(size: 14))
+                        .foregroundStyle(AppTheme.textSecondary)
+
+                    Button {
+                        Task {
+                            _ = try? await environment.reminderService.requestAuthorization()
+                        }
+                    } label: {
+                        Text("Enable Reminder Permission")
+                            .font(AppTheme.sans(size: 16, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(AppTheme.accent)
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .appCard()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Library")
+                        .font(AppTheme.sans(size: 11, weight: .semibold))
+                        .foregroundStyle(AppTheme.textSecondary)
+                        .textCase(.uppercase)
+                        .tracking(1.1)
+
+                    Text("\(environment.habits.filter { !$0.isArchived }.count) active habits")
+                        .font(AppTheme.serif(size: 24, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary)
+
+                    Text("\(environment.completions.count) total check-ins recorded")
+                        .font(AppTheme.sans(size: 13))
+                        .foregroundStyle(AppTheme.textSecondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .appCard(fill: AppTheme.surface)
             }
-            .foregroundStyle(AppTheme.textSecondary)
+            .padding(20)
+            .padding(.bottom, 110)
         }
-        .navigationTitle("Settings")
+        .scrollIndicators(.hidden)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

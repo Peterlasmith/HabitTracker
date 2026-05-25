@@ -13,12 +13,19 @@ protocol CheckInRepository {
     func sync() async throws -> [HabitCompletion]
 }
 
+protocol HabitRemoteDataSource: Sendable {
+    func fetchHabits(authHeader: String?) async throws -> [Habit]
+    func upsertHabit(_ habit: Habit, authHeader: String?) async throws
+    func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion]
+    func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws
+}
+
 actor DefaultHabitRepository: HabitRepository {
     private let localStore: LocalStore
-    private let remote: SupabaseHabitRemoteDataSource
+    private let remote: any HabitRemoteDataSource
     private let authService: AuthService
 
-    init(localStore: LocalStore, remote: SupabaseHabitRemoteDataSource, authService: AuthService) {
+    init(localStore: LocalStore, remote: any HabitRemoteDataSource, authService: AuthService) {
         self.localStore = localStore
         self.remote = remote
         self.authService = authService
@@ -37,7 +44,7 @@ actor DefaultHabitRepository: HabitRepository {
         }
         try await localStore.writeHabits(habits)
         let authHeader = await MainActor.run { authService.authorizationHeader() }
-        try await remote.upsertHabit(habit, authHeader: authHeader)
+        try? await remote.upsertHabit(habit, authHeader: authHeader)
     }
 
     func archiveHabit(_ habit: Habit) async throws {
@@ -47,19 +54,38 @@ actor DefaultHabitRepository: HabitRepository {
     }
 
     func sync() async throws -> [Habit] {
+        let localHabits = try await localStore.readHabits()
         let authHeader = await MainActor.run { authService.authorizationHeader() }
+
+        for habit in localHabits {
+            try? await remote.upsertHabit(habit, authHeader: authHeader)
+        }
+
         let remoteHabits = try await remote.fetchHabits(authHeader: authHeader)
-        try await localStore.writeHabits(remoteHabits)
-        return remoteHabits
+        let mergedHabits = mergeHabits(localHabits, with: remoteHabits)
+        try await localStore.writeHabits(mergedHabits)
+        return mergedHabits
+    }
+
+    private func mergeHabits(_ localHabits: [Habit], with remoteHabits: [Habit]) -> [Habit] {
+        let merged = remoteHabits.reduce(into: [UUID: Habit]()) { partialResult, habit in
+            partialResult[habit.id] = habit
+        }
+
+        let mergedWithLocal = localHabits.reduce(into: merged) { partialResult, habit in
+            partialResult[habit.id] = habit
+        }
+
+        return mergedWithLocal.values.sorted { $0.createdAt < $1.createdAt }
     }
 }
 
 actor DefaultCheckInRepository: CheckInRepository {
     private let localStore: LocalStore
-    private let remote: SupabaseHabitRemoteDataSource
+    private let remote: any HabitRemoteDataSource
     private let authService: AuthService
 
-    init(localStore: LocalStore, remote: SupabaseHabitRemoteDataSource, authService: AuthService) {
+    init(localStore: LocalStore, remote: any HabitRemoteDataSource, authService: AuthService) {
         self.localStore = localStore
         self.remote = remote
         self.authService = authService
@@ -78,14 +104,33 @@ actor DefaultCheckInRepository: CheckInRepository {
         }
         try await localStore.writeCompletions(completions)
         let authHeader = await MainActor.run { authService.authorizationHeader() }
-        try await remote.upsertCompletion(completion, authHeader: authHeader)
+        try? await remote.upsertCompletion(completion, authHeader: authHeader)
     }
 
     func sync() async throws -> [HabitCompletion] {
+        let localCompletions = try await localStore.readCompletions()
         let authHeader = await MainActor.run { authService.authorizationHeader() }
+
+        for completion in localCompletions {
+            try? await remote.upsertCompletion(completion, authHeader: authHeader)
+        }
+
         let remoteCompletions = try await remote.fetchCompletions(authHeader: authHeader)
-        try await localStore.writeCompletions(remoteCompletions)
-        return remoteCompletions
+        let mergedCompletions = mergeCompletions(localCompletions, with: remoteCompletions)
+        try await localStore.writeCompletions(mergedCompletions)
+        return mergedCompletions
+    }
+
+    private func mergeCompletions(_ localCompletions: [HabitCompletion], with remoteCompletions: [HabitCompletion]) -> [HabitCompletion] {
+        let merged = remoteCompletions.reduce(into: [UUID: HabitCompletion]()) { partialResult, completion in
+            partialResult[completion.id] = completion
+        }
+
+        let mergedWithLocal = localCompletions.reduce(into: merged) { partialResult, completion in
+            partialResult[completion.id] = completion
+        }
+
+        return mergedWithLocal.values.sorted { $0.date < $1.date }
     }
 }
 
@@ -95,11 +140,15 @@ actor LocalStore {
     private let encoder = JSONEncoder.supabase
     private let decoder = JSONDecoder.supabase
 
-    init(fileManager: FileManager = .default) {
+    init(fileManager: FileManager = .default, baseURL: URL? = nil) {
         self.fileManager = fileManager
-        let root = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? fileManager.temporaryDirectory
-        self.baseURL = root.appending(path: "HabitTracker", directoryHint: .isDirectory)
+        if let baseURL {
+            self.baseURL = baseURL
+        } else {
+            let root = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                ?? fileManager.temporaryDirectory
+            self.baseURL = root.appending(path: "HabitTracker", directoryHint: .isDirectory)
+        }
     }
 
     func readHabits() async throws -> [Habit] {
@@ -149,13 +198,13 @@ struct SupabaseHabitRemoteDataSource {
     }
 
     func fetchHabits(authHeader: String?) async throws -> [Habit] {
-        let rows: [HabitRow] = try await performRequest(path: "/rest/v1/habits?select=*", method: "GET", authHeader: authHeader)
+        let rows: [HabitRow] = try await performRequest(path: "rest/v1/habits", queryItems: [URLQueryItem(name: "select", value: "*")], method: "GET", authHeader: authHeader)
         return rows.map(\.habit)
     }
 
     func upsertHabit(_ habit: Habit, authHeader: String?) async throws {
         _ = try await performRequest(
-            path: "/rest/v1/habits",
+            path: "rest/v1/habits",
             method: "POST",
             authHeader: authHeader,
             preferHeader: "resolution=merge-duplicates",
@@ -164,13 +213,13 @@ struct SupabaseHabitRemoteDataSource {
     }
 
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] {
-        let rows: [HabitCompletionRow] = try await performRequest(path: "/rest/v1/habit_completions?select=*", method: "GET", authHeader: authHeader)
+        let rows: [HabitCompletionRow] = try await performRequest(path: "rest/v1/habit_completions", queryItems: [URLQueryItem(name: "select", value: "*")], method: "GET", authHeader: authHeader)
         return rows.map(\.completion)
     }
 
     func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws {
         _ = try await performRequest(
-            path: "/rest/v1/habit_completions",
+            path: "rest/v1/habit_completions",
             method: "POST",
             authHeader: authHeader,
             preferHeader: "resolution=merge-duplicates",
@@ -180,12 +229,14 @@ struct SupabaseHabitRemoteDataSource {
 
     private func performRequest<Response: Decodable>(
         path: String,
+        queryItems: [URLQueryItem] = [],
         method: String,
         authHeader: String?,
         preferHeader: String? = nil
     ) async throws -> Response {
         try await performRequest(
             path: path,
+            queryItems: queryItems,
             method: method,
             authHeader: authHeader,
             preferHeader: preferHeader,
@@ -195,15 +246,18 @@ struct SupabaseHabitRemoteDataSource {
 
     private func performRequest<Response: Decodable, Body: Encodable>(
         path: String,
+        queryItems: [URLQueryItem] = [],
         method: String,
         authHeader: String?,
         preferHeader: String? = nil,
         body: Body? = nil
     ) async throws -> Response {
-        var request = URLRequest(url: configuration.url.appending(path: path))
+        var request = URLRequest(url: endpointURL(path: path, queryItems: queryItems))
         request.httpMethod = method
         request.setValue(configuration.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(configuration.anonKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("return=representation", forHTTPHeaderField: "Prefer")
 
         if let authHeader {
@@ -221,13 +275,28 @@ struct SupabaseHabitRemoteDataSource {
             throw AppError.network("Missing HTTP response.")
         }
         guard (200...299).contains(httpResponse.statusCode) else {
-            let message = (try? JSONDecoder.supabase.decode(SupabaseError.self, from: data).message)
+            let message = (try? JSONDecoder.supabase.decode(SupabaseError.self, from: data).bestMessage)
+                ?? String(data: data, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .nilIfEmpty
                 ?? HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode)
             throw AppError.network(message)
         }
         return try JSONDecoder.supabase.decode(Response.self, from: data)
     }
+
+    private func endpointURL(path: String, queryItems: [URLQueryItem]) -> URL {
+        let normalizedPath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let baseURL = configuration.url.appending(path: normalizedPath)
+        guard !queryItems.isEmpty else { return baseURL }
+
+        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+        components?.queryItems = queryItems
+        return components?.url ?? baseURL
+    }
 }
+
+extension SupabaseHabitRemoteDataSource: HabitRemoteDataSource {}
 
 struct HabitRow: Codable {
     let id: UUID
@@ -340,6 +409,12 @@ struct HabitCompletionRow: Codable {
             note: note,
             createdAt: createdAt
         )
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }
 

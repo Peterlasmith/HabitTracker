@@ -13,7 +13,8 @@ create table if not exists public.habits (
     reminder_hour integer check (reminder_hour between 0 and 23),
     reminder_minute integer check (reminder_minute between 0 and 59),
     created_at timestamptz not null default timezone('utc', now()),
-    archived_at timestamptz
+    archived_at timestamptz,
+    constraint habits_id_user_id_unique unique (id, user_id)
 );
 
 create table if not exists public.habit_completions (
@@ -38,9 +39,6 @@ create unique index if not exists habit_completions_habit_date_idx
 
 create unique index if not exists habit_completions_user_habit_date_idx
     on public.habit_completions (user_id, habit_id, date);
-
-create unique index if not exists habits_id_user_id_idx
-    on public.habits (id, user_id);
 
 alter table public.habits enable row level security;
 alter table public.habit_completions enable row level security;

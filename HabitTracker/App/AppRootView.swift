@@ -9,41 +9,58 @@ struct AppRootView: View {
 
             switch environment.phase {
             case .launching:
-                ProgressView("Loading your habits...")
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Cadence")
+                        .font(AppTheme.serif(size: 30, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary)
+
+                    ProgressView("Loading your habits...")
+                        .tint(AppTheme.accent)
+                        .font(AppTheme.sans(size: 16))
+                }
+                .frame(maxWidth: 320, alignment: .leading)
+                .appCard()
             case .onboarding:
                 OnboardingView()
             case .authentication:
                 AuthView()
-            case .paywall:
-                PurchaseView()
             case .ready:
                 MainAppView()
             }
         }
         .overlay(alignment: .top) {
-            if let errorMessage = environment.errorMessage {
+            if environment.phase != .authentication, let errorMessage = environment.errorMessage {
                 Text(errorMessage)
-                    .font(.callout.weight(.medium))
+                    .font(AppTheme.sans(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
-                    .background(Color.red.opacity(0.9))
+                    .background(AppTheme.error)
                     .clipShape(Capsule())
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+        .preferredColorScheme(.light)
     }
 
     private var background: some View {
         LinearGradient(
             colors: [
-                Color(red: 0.98, green: 0.94, blue: 0.86),
-                Color(red: 0.88, green: 0.95, blue: 0.91)
+                Color(red: 0.95, green: 0.92, blue: 0.86),
+                AppTheme.background,
+                Color(red: 0.91, green: 0.88, blue: 0.80)
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
+        .overlay(alignment: .topTrailing) {
+            Circle()
+                .fill(AppTheme.accentSoft)
+                .frame(width: 220, height: 220)
+                .blur(radius: 10)
+                .offset(x: 70, y: -70)
+        }
         .ignoresSafeArea()
     }
 }
@@ -59,10 +76,10 @@ private struct MainAppView: View {
             }
 
             NavigationStack {
-                HistoryView()
+                TrendsView()
             }
             .tabItem {
-                Label("History", systemImage: "clock.arrow.circlepath")
+                Label("Trends", systemImage: "chart.line.uptrend.xyaxis")
             }
 
             NavigationStack {
@@ -73,5 +90,7 @@ private struct MainAppView: View {
             }
         }
         .tint(AppTheme.accent)
+        .toolbarBackground(AppTheme.background, for: .tabBar)
+        .toolbarBackground(.visible, for: .tabBar)
     }
 }

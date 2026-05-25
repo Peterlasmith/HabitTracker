@@ -35,13 +35,25 @@ final class SupabaseAuthService: ObservableObject, AuthService {
             return nil
         }
 
-        let user = try await fetchCurrentUser(accessToken: session.accessToken)
-        currentUser = user
-        return user
+        do {
+            let user = try await fetchCurrentUser(accessToken: session.accessToken)
+            currentUser = user
+            return user
+        } catch {
+            if shouldDiscardStoredSession(for: error) {
+                try? sessionStore.clear()
+                currentUser = nil
+                return nil
+            }
+            throw error
+        }
     }
 
     func signIn(email: String, password: String) async throws -> AppUser {
-        let session = try await authenticate(path: "/auth/v1/token?grant_type=password", body: [
+        try validateCredentials(email: email, password: password, mode: .signIn)
+        let session = try await authenticate(path: "auth/v1/token", queryItems: [
+            URLQueryItem(name: "grant_type", value: "password")
+        ], body: [
             "email": email,
             "password": password
         ])
@@ -52,14 +64,45 @@ final class SupabaseAuthService: ObservableObject, AuthService {
     }
 
     func signUp(email: String, password: String) async throws -> AppUser {
-        let session = try await authenticate(path: "/auth/v1/signup", body: [
+        try validateCredentials(email: email, password: password, mode: .signUp)
+        let data = try await performRequest(path: "auth/v1/signup", body: [
             "email": email,
             "password": password
         ])
-        try sessionStore.write(session)
-        let user = AppUser(id: session.user.id, email: session.user.email)
-        currentUser = user
-        return user
+
+        if let session = try? JSONDecoder.supabase.decode(SupabaseSession.self, from: data) {
+            try sessionStore.write(session)
+            let user = AppUser(id: session.user.id, email: session.user.email)
+            currentUser = user
+            return user
+        }
+
+        if let response = try? JSONDecoder.supabase.decode(SupabaseSignUpResponse.self, from: data) {
+            if let session = response.session {
+                try sessionStore.write(session)
+                let user = AppUser(id: session.user.id, email: session.user.email)
+                currentUser = user
+                return user
+            }
+
+            if let user = response.user {
+                do {
+                    return try await signIn(email: email, password: password)
+                } catch {
+                    throw AppError.network("Account created for \(user.email), but automatic sign-in failed: \(error.localizedDescription)")
+                }
+            }
+        }
+
+        if let user = try? JSONDecoder.supabase.decode(SupabaseUser.self, from: data) {
+            do {
+                return try await signIn(email: email, password: password)
+            } catch {
+                throw AppError.network("Account created for \(user.email), but automatic sign-in failed: \(error.localizedDescription)")
+            }
+        }
+
+        throw AppError.network("Received an unexpected signup response from Supabase.")
     }
 
     func signOut() async throws {
@@ -74,7 +117,7 @@ final class SupabaseAuthService: ObservableObject, AuthService {
     }
 
     private func fetchCurrentUser(accessToken: String) async throws -> AppUser {
-        var request = URLRequest(url: configuration.url.appending(path: "/auth/v1/user"))
+        var request = URLRequest(url: endpointURL(path: "auth/v1/user", queryItems: []))
         request.httpMethod = "GET"
         request.setValue(configuration.anonKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
@@ -85,16 +128,52 @@ final class SupabaseAuthService: ObservableObject, AuthService {
         return AppUser(id: user.id, email: user.email)
     }
 
-    private func authenticate(path: String, body: [String: String]) async throws -> SupabaseSession {
-        var request = URLRequest(url: configuration.url.appending(path: path))
+    private func authenticate(path: String, queryItems: [URLQueryItem], body: [String: String]) async throws -> SupabaseSession {
+        let data = try await performRequest(path: path, queryItems: queryItems, body: body)
+        return try JSONDecoder.supabase.decode(SupabaseSession.self, from: data)
+    }
+
+    private func performRequest(path: String, body: [String: String]) async throws -> Data {
+        try await performRequest(path: path, queryItems: [], body: body)
+    }
+
+    private func performRequest(path: String, queryItems: [URLQueryItem], body: [String: String]) async throws -> Data {
+        var request = URLRequest(url: endpointURL(path: path, queryItems: queryItems))
         request.httpMethod = "POST"
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(configuration.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(configuration.anonKey)", forHTTPHeaderField: "Authorization")
 
         let (data, response) = try await urlSession.data(for: request)
         try validate(response: response, data: data)
-        return try JSONDecoder.supabase.decode(SupabaseSession.self, from: data)
+        return data
+    }
+
+    private func endpointURL(path: String, queryItems: [URLQueryItem]) -> URL {
+        let normalizedPath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let baseURL = configuration.url.appending(path: normalizedPath)
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+            return baseURL
+        }
+        components.queryItems = queryItems.isEmpty ? nil : queryItems
+        return components.url ?? baseURL
+    }
+
+    private func validateCredentials(email: String, password: String, mode: AuthMode) throws {
+        if configuration.anonKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw AppError.configuration("Supabase isn't configured yet. Add your project URL and anon key in the app plist to enable \(mode.actionNoun).")
+        }
+
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedEmail.contains("@"), trimmedEmail.contains(".") else {
+            throw AppError.network("Enter a valid email address to \(mode.actionVerb).")
+        }
+
+        if mode == .signUp, password.count < 8 {
+            throw AppError.network("Use at least 8 characters for your password.")
+        }
     }
 
     private func validate(response: URLResponse, data: Data) throws {
@@ -103,9 +182,80 @@ final class SupabaseAuthService: ObservableObject, AuthService {
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
-            let message = (try? JSONDecoder.supabase.decode(SupabaseError.self, from: data).message)
+            let message = (try? JSONDecoder.supabase.decode(SupabaseError.self, from: data).bestMessage)
+                ?? String(data: data, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .nilIfEmpty
                 ?? HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode)
-            throw AppError.network(message)
+            throw AppError.network(normalizedErrorMessage(message, statusCode: httpResponse.statusCode))
+        }
+    }
+
+    private func normalizedErrorMessage(_ message: String, statusCode: Int) -> String {
+        let normalized = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowercased = normalized.lowercased()
+
+        if statusCode == 400 || statusCode == 401 {
+            if lowercased.contains("invalid login credentials") || lowercased.contains("invalid_grant") {
+                return "That email and password combination didn't match. Double-check your details and try again."
+            }
+
+            if lowercased.contains("email not confirmed") {
+                return "Check your inbox to confirm your email before signing in."
+            }
+        }
+
+        if statusCode == 403 {
+            if lowercased.contains("bad_jwt") || lowercased.contains("invalid jwt") || lowercased.contains("token is expired") {
+                return "Your session expired. Sign in again to keep going."
+            }
+        }
+
+        if lowercased.contains("user already registered") {
+            return "An account with that email already exists. Try signing in instead."
+        }
+
+        if lowercased.contains("password should be at least") {
+            return "Use at least 8 characters for your password."
+        }
+
+        if lowercased.contains("unable to validate email address") || lowercased.contains("invalid email") {
+            return "Enter a valid email address and try again."
+        }
+
+        return normalized
+    }
+
+    private func shouldDiscardStoredSession(for error: Error) -> Bool {
+        let message = error.localizedDescription.lowercased()
+        return message.contains("bad_jwt")
+            || message.contains("invalid jwt")
+            || message.contains("token is expired")
+            || message.contains("session expired")
+    }
+}
+
+private extension SupabaseAuthService {
+    enum AuthMode {
+        case signIn
+        case signUp
+
+        var actionVerb: String {
+            switch self {
+            case .signIn:
+                return "sign in"
+            case .signUp:
+                return "create an account"
+            }
+        }
+
+        var actionNoun: String {
+            switch self {
+            case .signIn:
+                return "sign-in"
+            case .signUp:
+                return "account creation"
+            }
         }
     }
 }
@@ -139,12 +289,47 @@ struct SupabaseUser: Codable {
 }
 
 struct SupabaseError: Codable {
-    let message: String
+    let message: String?
+    let msg: String?
+    let error: String?
+    let errorDescription: String?
+    let code: String?
+
+    enum CodingKeys: String, CodingKey {
+        case message
+        case msg
+        case error
+        case errorDescription = "error_description"
+        case code
+    }
+
+    var bestMessage: String {
+        [
+            message,
+            msg,
+            errorDescription,
+            error,
+            code
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .first(where: { !$0.isEmpty }) ?? "Unknown Supabase error."
+    }
+}
+
+struct SupabaseSignUpResponse: Codable {
+    let user: SupabaseUser?
+    let session: SupabaseSession?
 }
 
 struct StoredSession: Codable {
     let accessToken: String
     let refreshToken: String?
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
+    }
 }
 
 struct SessionStore {
@@ -202,4 +387,3 @@ struct SessionStore {
         }
     }
 }
-
