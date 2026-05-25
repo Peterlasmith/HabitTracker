@@ -166,29 +166,6 @@ final class AppEnvironment: ObservableObject {
         }()
     }
 
-    func deleteHabit(_ habit: Habit) async {
-        let previousHabits = self.habits
-        let previousCompletions = self.completions
-        let updatedHabits = previousHabits.filter { $0.id != habit.id }
-        let updatedCompletions = previousCompletions.filter { $0.habitId != habit.id }
-
-        self.habits = updatedHabits
-        self.completions = updatedCompletions
-
-        let updatedHabitsCopy = updatedHabits
-        let updatedCompletionsCopy = updatedCompletions
-        let habitCopy = habit
-        await self.runBusyTask { [updatedHabitsCopy, updatedCompletionsCopy, habitCopy] in
-            try await self.habitRepository.deleteHabit(habitCopy)
-            try await self.checkInRepository.deleteCompletions(for: habitCopy)
-            try await self.reminderService.rescheduleNotifications(for: updatedHabitsCopy)
-            self.widgetSyncService.publish(habits: updatedHabitsCopy, completions: updatedCompletionsCopy)
-        } ?? { [previousHabits, previousCompletions] in
-            self.habits = previousHabits
-            self.completions = previousCompletions
-        }()
-    }
-
     func restoreHabit(_ habit: Habit) async {
         let previousHabits = self.habits
         var restoredHabit = habit

@@ -162,7 +162,7 @@ final class HabitTrackerTests: XCTestCase {
         XCTAssertNil(savedHabits.first(where: { $0.id == secondHabit.id })?.archivedAt)
     }
 
-    func testDeletingOneHabitDoesNotDeleteOthers() async throws {
+    func testArchivingOneHabitDoesNotArchiveOthers() async throws {
         let baseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let localStore = LocalStore(baseURL: baseURL)
         let repository = await MainActor.run {
@@ -203,10 +203,12 @@ final class HabitTrackerTests: XCTestCase {
 
         try await repository.saveHabit(firstHabit)
         try await repository.saveHabit(secondHabit)
-        try await repository.deleteHabit(firstHabit)
+        try await repository.archiveHabit(firstHabit)
 
         let savedHabits = try await repository.fetchHabits()
-        XCTAssertEqual(savedHabits, [secondHabit])
+        XCTAssertEqual(savedHabits.count, 2)
+        XCTAssertNotNil(savedHabits.first(where: { $0.id == firstHabit.id })?.archivedAt)
+        XCTAssertNil(savedHabits.first(where: { $0.id == secondHabit.id })?.archivedAt)
     }
 
     func testSavingUpdatedHabitDoesNotChangeOthersWithMatchingCreationTime() async throws {
@@ -491,14 +493,8 @@ private struct FailingRemoteDataSource: HabitRemoteDataSource {
     func upsertHabit(_ habit: Habit, authHeader: String?) async throws {
         throw AppError.network("Remote unavailable")
     }
-    func deleteHabit(_ habit: Habit, authHeader: String?) async throws {
-        throw AppError.network("Remote unavailable")
-    }
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] { [] }
     func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws {
-        throw AppError.network("Remote unavailable")
-    }
-    func deleteCompletions(for habit: Habit, authHeader: String?) async throws {
         throw AppError.network("Remote unavailable")
     }
 }
@@ -515,11 +511,8 @@ private actor EventuallyConsistentRemoteDataSource: HabitRemoteDataSource {
         // does not necessarily include the record yet.
     }
 
-    func deleteHabit(_ habit: Habit, authHeader: String?) async throws {}
-
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] { [] }
     func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws {}
-    func deleteCompletions(for habit: Habit, authHeader: String?) async throws {}
 }
 
 private actor DuplicateCompletionRemoteDataSource: HabitRemoteDataSource {
@@ -531,10 +524,8 @@ private actor DuplicateCompletionRemoteDataSource: HabitRemoteDataSource {
 
     func fetchHabits(authHeader: String?) async throws -> [Habit] { [] }
     func upsertHabit(_ habit: Habit, authHeader: String?) async throws {}
-    func deleteHabit(_ habit: Habit, authHeader: String?) async throws {}
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] { completions }
     func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws {}
-    func deleteCompletions(for habit: Habit, authHeader: String?) async throws {}
 }
 
 private actor StubHabitRepository: HabitRepository {
@@ -549,7 +540,6 @@ private actor StubHabitRepository: HabitRepository {
         }
     }
     func archiveHabit(_ habit: Habit) async throws {}
-    func deleteHabit(_ habit: Habit) async throws {}
     func sync() async throws -> [Habit] { habits }
 }
 
@@ -562,9 +552,6 @@ private actor StubCheckInRepository: CheckInRepository {
             $0.habitId == completion.habitId && Calendar.current.isDate($0.date, inSameDayAs: completion.date)
         }
         completions.append(completion)
-    }
-    func deleteCompletions(for habit: Habit) async throws {
-        completions.removeAll { $0.habitId == habit.id }
     }
     func sync() async throws -> [HabitCompletion] { completions }
 }
@@ -579,10 +566,6 @@ private actor StaleFetchCheckInRepository: CheckInRepository {
             $0.habitId == completion.habitId && Calendar.current.isDate($0.date, inSameDayAs: completion.date)
         }
         completions.append(completion)
-    }
-
-    func deleteCompletions(for habit: Habit) async throws {
-        completions.removeAll { $0.habitId == habit.id }
     }
 
     func sync() async throws -> [HabitCompletion] { completions }

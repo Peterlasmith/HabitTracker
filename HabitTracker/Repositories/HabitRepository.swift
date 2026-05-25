@@ -4,24 +4,20 @@ protocol HabitRepository {
     func fetchHabits() async throws -> [Habit]
     func saveHabit(_ habit: Habit) async throws
     func archiveHabit(_ habit: Habit) async throws
-    func deleteHabit(_ habit: Habit) async throws
     func sync() async throws -> [Habit]
 }
 
 protocol CheckInRepository {
     func fetchCompletions() async throws -> [HabitCompletion]
     func recordCompletion(_ completion: HabitCompletion) async throws
-    func deleteCompletions(for habit: Habit) async throws
     func sync() async throws -> [HabitCompletion]
 }
 
 protocol HabitRemoteDataSource: Sendable {
     func fetchHabits(authHeader: String?) async throws -> [Habit]
     func upsertHabit(_ habit: Habit, authHeader: String?) async throws
-    func deleteHabit(_ habit: Habit, authHeader: String?) async throws
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion]
     func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws
-    func deleteCompletions(for habit: Habit, authHeader: String?) async throws
 }
 
 actor DefaultHabitRepository: HabitRepository {
@@ -55,15 +51,6 @@ actor DefaultHabitRepository: HabitRepository {
         var archived = habit
         archived.archivedAt = .now
         try await saveHabit(archived)
-    }
-
-    func deleteHabit(_ habit: Habit) async throws {
-        var habits = try await localStore.readHabits()
-        habits.removeAll { $0.id == habit.id }
-        try await localStore.writeHabits(habits)
-
-        let authHeader = await MainActor.run { authService.authorizationHeader() }
-        try? await remote.deleteHabit(habit, authHeader: authHeader)
     }
 
     func sync() async throws -> [Habit] {
@@ -115,14 +102,6 @@ actor DefaultCheckInRepository: CheckInRepository {
         try await localStore.writeCompletions(completions)
         let authHeader = await MainActor.run { authService.authorizationHeader() }
         try? await remote.upsertCompletion(completion, authHeader: authHeader)
-    }
-
-    func deleteCompletions(for habit: Habit) async throws {
-        let remainingCompletions = try await localStore.readCompletions().filter { $0.habitId != habit.id }
-        try await localStore.writeCompletions(remainingCompletions)
-
-        let authHeader = await MainActor.run { authService.authorizationHeader() }
-        try? await remote.deleteCompletions(for: habit, authHeader: authHeader)
     }
 
     func sync() async throws -> [HabitCompletion] {
@@ -272,17 +251,6 @@ struct SupabaseHabitRemoteDataSource {
         ) as [HabitRow]
     }
 
-    func deleteHabit(_ habit: Habit, authHeader: String?) async throws {
-        _ = try await performRequest(
-            path: "rest/v1/habits",
-            queryItems: [
-                URLQueryItem(name: "id", value: "eq.\(habit.id.uuidString)")
-            ],
-            method: "DELETE",
-            authHeader: authHeader
-        ) as [HabitRow]
-    }
-
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] {
         let rows: [HabitCompletionRow] = try await performRequest(path: "rest/v1/habit_completions", queryItems: [URLQueryItem(name: "select", value: "*")], method: "GET", authHeader: authHeader)
         return rows.map(\.completion)
@@ -296,17 +264,6 @@ struct SupabaseHabitRemoteDataSource {
             authHeader: authHeader,
             preferHeader: "resolution=merge-duplicates",
             body: [HabitCompletionRow(completion: completion)]
-        ) as [HabitCompletionRow]
-    }
-
-    func deleteCompletions(for habit: Habit, authHeader: String?) async throws {
-        _ = try await performRequest(
-            path: "rest/v1/habit_completions",
-            queryItems: [
-                URLQueryItem(name: "habit_id", value: "eq.\(habit.id.uuidString)")
-            ],
-            method: "DELETE",
-            authHeader: authHeader
         ) as [HabitCompletionRow]
     }
 

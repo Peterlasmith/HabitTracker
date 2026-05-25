@@ -5,7 +5,7 @@ struct HabitManagerView: View {
     @EnvironmentObject private var environment: AppEnvironment
 
     @State private var selectedHabit: Habit?
-    @State private var habitPendingDeletion: Habit?
+    @State private var habitPendingArchival: Habit?
 
     private var activeHabits: [Habit] {
         environment.habits
@@ -27,7 +27,7 @@ struct HabitManagerView: View {
                         .font(AppTheme.serif(size: 32, weight: .semibold))
                         .foregroundStyle(AppTheme.textPrimary)
 
-                    Text("Edit names, schedules, or reminders, and remove habits you no longer want to track.")
+                    Text("Edit names, schedules, or reminders, and archive habits you no longer want to track.")
                         .font(AppTheme.sans(size: 14))
                         .foregroundStyle(AppTheme.textSecondary)
                 }
@@ -85,30 +85,30 @@ struct HabitManagerView: View {
             }
         }
         .confirmationDialog(
-            habitPendingDeletion == nil ? "Delete habit" : "Delete \(habitPendingDeletion?.name ?? "habit")?",
+            habitPendingArchival == nil ? "Archive habit" : "Archive \(habitPendingArchival?.name ?? "habit")?",
             isPresented: Binding(
-                get: { habitPendingDeletion != nil },
+                get: { habitPendingArchival != nil },
                 set: { isPresented in
                     if !isPresented {
-                        habitPendingDeletion = nil
+                        habitPendingArchival = nil
                     }
                 }
             ),
             titleVisibility: .visible
         ) {
-            Button("Delete Habit", role: .destructive) {
-                guard let habit = habitPendingDeletion else { return }
+            Button("Archive Habit") {
+                guard let habit = habitPendingArchival else { return }
                 Task {
-                    await environment.deleteHabit(habit)
-                    habitPendingDeletion = nil
+                    await environment.archiveHabit(habit)
+                    habitPendingArchival = nil
                 }
             }
 
             Button("Cancel", role: .cancel) {
-                habitPendingDeletion = nil
+                habitPendingArchival = nil
             }
         } message: {
-            Text("This permanently removes only this habit and its check-ins.")
+            Text("This removes the habit from your active lists and keeps its history in Archived.")
         }
     }
 
@@ -144,8 +144,8 @@ struct HabitManagerView: View {
                     .stroke(AppTheme.border, lineWidth: 1)
             )
 
-            Button("Delete", role: .destructive) {
-                habitPendingDeletion = habit
+            Button("Archive") {
+                habitPendingArchival = habit
             }
             .font(AppTheme.sans(size: 13, weight: .semibold))
             .padding(.horizontal, 14)
