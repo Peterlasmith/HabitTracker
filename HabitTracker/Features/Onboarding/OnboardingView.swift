@@ -41,6 +41,7 @@ struct OnboardingView: View {
                         .background(AppTheme.accent)
                         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 }
+                .buttonStyle(.plain)
             }
             .padding(24)
             .frame(maxWidth: 480, alignment: .leading)

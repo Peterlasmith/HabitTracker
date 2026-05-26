@@ -113,83 +113,117 @@ struct HabitManagerView: View {
     }
 
     private func habitRow(_ habit: Habit) -> some View {
-        HStack(alignment: .center, spacing: 14) {
-            Circle()
-                .fill(habit.color.color)
-                .frame(width: 14, height: 14)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center, spacing: 14) {
+                Circle()
+                    .fill(habit.color.color)
+                    .frame(width: 14, height: 14)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("\(habit.emojiOrIcon) \(habit.name)")
-                    .font(AppTheme.serif(size: 20, weight: .semibold))
-                    .foregroundStyle(AppTheme.textPrimary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(habit.emojiOrIcon) \(habit.name)")
+                        .font(AppTheme.serif(size: 20, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary)
 
-                Text(habitScheduleLabel(habit.schedule))
-                    .font(AppTheme.sans(size: 13))
-                    .foregroundStyle(AppTheme.textSecondary)
+                    Text(habitScheduleLabel(habit.schedule))
+                        .font(AppTheme.sans(size: 13))
+                        .foregroundStyle(AppTheme.textSecondary)
+                }
+
+                Spacer(minLength: 0)
             }
 
-            Spacer()
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    editButton(for: habit)
+                    archiveButton(for: habit)
+                }
 
-            Button("Edit") {
-                selectedHabit = habit
+                VStack(alignment: .leading, spacing: 10) {
+                    editButton(for: habit)
+                    archiveButton(for: habit)
+                }
             }
-            .font(AppTheme.sans(size: 13, weight: .semibold))
-            .foregroundStyle(AppTheme.textPrimary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(AppTheme.surface)
-            .clipShape(Capsule())
-            .overlay(
-                Capsule()
-                    .stroke(AppTheme.border, lineWidth: 1)
-            )
-
-            Button("Archive") {
-                habitPendingArchival = habit
-            }
-            .font(AppTheme.sans(size: 13, weight: .semibold))
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .appCard(fill: AppTheme.surfaceStrong, padding: 14, cornerRadius: 20)
     }
 
     private func archivedHabitRow(_ habit: Habit) -> some View {
-        HStack(alignment: .center, spacing: 14) {
-            Circle()
-                .fill(habit.color.color.opacity(0.55))
-                .frame(width: 14, height: 14)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center, spacing: 14) {
+                Circle()
+                    .fill(habit.color.color.opacity(0.55))
+                    .frame(width: 14, height: 14)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("\(habit.emojiOrIcon) \(habit.name)")
-                    .font(AppTheme.serif(size: 20, weight: .semibold))
-                    .foregroundStyle(AppTheme.textPrimary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(habit.emojiOrIcon) \(habit.name)")
+                        .font(AppTheme.serif(size: 20, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary)
 
-                Text("Archived")
-                    .font(AppTheme.sans(size: 13))
-                    .foregroundStyle(AppTheme.textSecondary)
-            }
-
-            Spacer()
-
-            Button("Restore") {
-                Task {
-                    await environment.restoreHabit(habit)
+                    Text("Archived")
+                        .font(AppTheme.sans(size: 13))
+                        .foregroundStyle(AppTheme.textSecondary)
                 }
+
+                Spacer(minLength: 0)
             }
-            .font(AppTheme.sans(size: 13, weight: .semibold))
-            .foregroundStyle(AppTheme.textPrimary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(AppTheme.surface)
-            .clipShape(Capsule())
-            .overlay(
-                Capsule()
-                    .stroke(AppTheme.border, lineWidth: 1)
-            )
+
+            restoreButton(for: habit)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .appCard(fill: AppTheme.surfaceStrong, padding: 14, cornerRadius: 20)
+    }
+
+    private func editButton(for habit: Habit) -> some View {
+        Button("Edit") {
+            selectedHabit = habit
+        }
+        .font(AppTheme.sans(size: 13, weight: .semibold))
+        .foregroundStyle(AppTheme.textPrimary)
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(AppTheme.surface)
+        .clipShape(Capsule())
+        .overlay(
+            Capsule()
+                .stroke(AppTheme.border, lineWidth: 1)
+        )
+        .buttonStyle(.plain)
+    }
+
+    private func archiveButton(for habit: Habit) -> some View {
+        Button("Archive") {
+            habitPendingArchival = habit
+        }
+        .font(AppTheme.sans(size: 13, weight: .semibold))
+        .foregroundStyle(AppTheme.textPrimary)
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .buttonStyle(.plain)
+    }
+
+    private func restoreButton(for habit: Habit) -> some View {
+        Button("Restore") {
+            Task {
+                await environment.restoreHabit(habit)
+            }
+        }
+        .font(AppTheme.sans(size: 13, weight: .semibold))
+        .foregroundStyle(AppTheme.textPrimary)
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(AppTheme.surface)
+        .clipShape(Capsule())
+        .overlay(
+            Capsule()
+                .stroke(AppTheme.border, lineWidth: 1)
+        )
+        .buttonStyle(.plain)
     }
 }

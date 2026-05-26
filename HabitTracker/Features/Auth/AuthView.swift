@@ -220,6 +220,7 @@ struct AuthView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .shadow(color: isSubmitDisabled ? .clear : AppTheme.accent.opacity(0.22), radius: 14, x: 0, y: 10)
             }
+            .buttonStyle(.plain)
             .disabled(isSubmitDisabled)
         }
         .appCard(fill: AppTheme.surfaceStrong, padding: 20, cornerRadius: 26)

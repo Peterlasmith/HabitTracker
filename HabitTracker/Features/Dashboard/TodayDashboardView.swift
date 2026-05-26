@@ -60,8 +60,8 @@ struct TodayDashboardView: View {
     }
 
     private func topBar(habits: [Habit]) -> some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 16) {
                 HStack(alignment: .center, spacing: 8) {
                     Circle()
                         .fill(AppTheme.accent)
@@ -72,43 +72,56 @@ struct TodayDashboardView: View {
                         .foregroundStyle(AppTheme.textPrimary)
                 }
 
-                Text(habits.isEmpty ? "Build a calm routine that still feels easy to return to." : todaySummary(for: habits))
-                    .font(AppTheme.sans(size: 14))
-                    .foregroundStyle(AppTheme.textSecondary)
-            }
+                Spacer(minLength: 0)
 
-            Spacer()
-
-            HStack(spacing: 8) {
-                if !habits.isEmpty {
-                    Button("Manage") {
-                        showingManager = true
+                if habits.isEmpty {
+                    addHabitButton
+                } else {
+                    HStack(spacing: 8) {
+                        manageButton
+                        addHabitButton
                     }
-                    .font(AppTheme.sans(size: 13, weight: .semibold))
-                    .foregroundStyle(AppTheme.textPrimary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(AppTheme.surfaceStrong)
-                    .clipShape(Capsule())
-                    .overlay(
-                        Capsule()
-                            .stroke(AppTheme.border, lineWidth: 1)
-                    )
-                }
-
-                Button {
-                    showingEditor = true
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(AppTheme.textPrimary)
-                        .frame(width: 38, height: 38)
-                        .background(AppTheme.surfaceStrong)
-                        .clipShape(Circle())
-                        .overlay(Circle().stroke(AppTheme.border, lineWidth: 1))
                 }
             }
+
+            Text(habits.isEmpty ? "Build a calm routine that still feels easy to return to." : todaySummary(for: habits))
+                .font(AppTheme.sans(size: 14))
+                .foregroundStyle(AppTheme.textSecondary)
         }
+    }
+
+    private var manageButton: some View {
+        Button("Manage") {
+            showingManager = true
+        }
+        .font(AppTheme.sans(size: 13, weight: .semibold))
+        .foregroundStyle(AppTheme.textPrimary)
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(AppTheme.surfaceStrong)
+        .clipShape(Capsule())
+        .overlay(
+            Capsule()
+                .stroke(AppTheme.border, lineWidth: 1)
+        )
+        .buttonStyle(.plain)
+    }
+
+    private var addHabitButton: some View {
+        Button {
+            showingEditor = true
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(AppTheme.textPrimary)
+                .frame(width: 38, height: 38)
+                .background(AppTheme.surfaceStrong)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(AppTheme.border, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 
     private var trackerScopePicker: some View {
