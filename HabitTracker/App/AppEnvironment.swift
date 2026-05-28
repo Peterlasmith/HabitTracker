@@ -73,6 +73,7 @@ final class AppEnvironment: ObservableObject {
         if self.currentUser != nil {
             try? await self.syncAll()
         }
+        await self.syncReminders()
         await self.determinePhase()
         await MainActor.run { self.isBusy = false }
     }
@@ -89,6 +90,7 @@ final class AppEnvironment: ObservableObject {
             await MainActor.run { self.currentUser = user }
             self.analyticsService.track(.signedIn)
             try await self.syncAll()
+            await self.syncReminders()
             await self.determinePhase()
         }
     }
@@ -99,6 +101,7 @@ final class AppEnvironment: ObservableObject {
             await MainActor.run { self.currentUser = user }
             self.analyticsService.track(.createdAccount)
             try await self.syncAll()
+            await self.syncReminders()
             await self.determinePhase()
         }
     }
@@ -106,6 +109,7 @@ final class AppEnvironment: ObservableObject {
     func signOut() async {
         await self.runBusyTask {
             try await self.authService.signOut()
+            await self.reminderService.clearAllNotifications()
             await MainActor.run {
                 self.currentUser = nil
                 self.habits = []
@@ -133,6 +137,16 @@ final class AppEnvironment: ObservableObject {
             self.habits = previousHabits
             return false
         }()
+    }
+
+    func enableReminderPermissions() async {
+        await self.runBusyTask {
+            let isAuthorized = try await self.reminderService.requestAuthorization()
+            guard isAuthorized else {
+                throw AppError.configuration("Notifications are disabled for HabitClaw. Enable them in iPhone Settings to receive reminders.")
+            }
+            await self.syncReminders()
+        }
     }
 
     func archiveHabit(_ habit: Habit) async {
@@ -253,6 +267,10 @@ final class AppEnvironment: ObservableObject {
                 self.completions = []
             }
         }
+    }
+
+    private func syncReminders() async {
+        try? await self.reminderService.rescheduleNotifications(for: self.habits)
     }
 
     private func determinePhase() async {

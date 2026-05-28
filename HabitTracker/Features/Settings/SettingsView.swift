@@ -51,7 +51,7 @@ struct SettingsView: View {
 
                     Button {
                         Task {
-                            _ = try? await environment.reminderService.requestAuthorization()
+                            await environment.enableReminderPermissions()
                         }
                     } label: {
                         Text("Enable Reminder Permission")

@@ -36,7 +36,7 @@ final class SupabaseAuthService: ObservableObject, AuthService {
         }
 
         do {
-            let user = try await fetchCurrentUser(accessToken: session.accessToken)
+            let user = try await userForValidSession(from: session)
             currentUser = user
             return user
         } catch {
@@ -126,6 +126,31 @@ final class SupabaseAuthService: ObservableObject, AuthService {
         try validate(response: response, data: data)
         let user = try JSONDecoder.supabase.decode(SupabaseUser.self, from: data)
         return AppUser(id: user.id, email: user.email)
+    }
+
+    private func userForValidSession(from session: StoredSession) async throws -> AppUser {
+        do {
+            return try await fetchCurrentUser(accessToken: session.accessToken)
+        } catch {
+            guard shouldAttemptSessionRefresh(for: error),
+                  let refreshToken = session.refreshToken?.nilIfEmpty
+            else {
+                throw error
+            }
+
+            let refreshedSession = try await refreshSession(refreshToken: refreshToken)
+            try sessionStore.write(refreshedSession)
+            return AppUser(id: refreshedSession.user.id, email: refreshedSession.user.email)
+        }
+    }
+
+    private func refreshSession(refreshToken: String) async throws -> SupabaseSession {
+        let data = try await performRequest(path: "auth/v1/token", queryItems: [
+            URLQueryItem(name: "grant_type", value: "refresh_token")
+        ], body: [
+            "refresh_token": refreshToken
+        ])
+        return try JSONDecoder.supabase.decode(SupabaseSession.self, from: data)
     }
 
     private func authenticate(path: String, queryItems: [URLQueryItem], body: [String: String]) async throws -> SupabaseSession {
@@ -232,6 +257,17 @@ final class SupabaseAuthService: ObservableObject, AuthService {
             || message.contains("invalid jwt")
             || message.contains("token is expired")
             || message.contains("session expired")
+            || message.contains("refresh token")
+            || message.contains("invalid refresh token")
+            || message.contains("invalid_grant")
+    }
+
+    private func shouldAttemptSessionRefresh(for error: Error) -> Bool {
+        let message = error.localizedDescription.lowercased()
+        return message.contains("bad_jwt")
+            || message.contains("invalid jwt")
+            || message.contains("token is expired")
+            || message.contains("session expired")
     }
 }
 
@@ -333,8 +369,13 @@ private extension String {
 }
 
 struct SessionStore {
-    private let service = "HabitTracker.auth"
-    private let account = "supabase.session"
+    private let service: String
+    private let account: String
+
+    init(service: String = "HabitTracker.auth", account: String = "supabase.session") {
+        self.service = service
+        self.account = account
+    }
 
     func write(_ session: SupabaseSession) throws {
         let data = try JSONEncoder().encode(StoredSession(accessToken: session.accessToken, refreshToken: session.refreshToken))

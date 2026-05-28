@@ -19,6 +19,7 @@ enum AppError: LocalizedError, Equatable {
 protocol ReminderService {
     func requestAuthorization() async throws -> Bool
     func rescheduleNotifications(for habits: [Habit]) async throws
+    func clearAllNotifications() async
 }
 
 struct DefaultReminderService: ReminderService {
@@ -69,6 +70,10 @@ struct DefaultReminderService: ReminderService {
         let baseIdentifier = "habit-\(habit.id.uuidString)"
         let weekdayIdentifiers = Weekday.allCases.map { "\(baseIdentifier)-\($0.rawValue)" }
         return [baseIdentifier] + weekdayIdentifiers
+    }
+
+    func clearAllNotifications() async {
+        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
     }
 }
 

@@ -2,6 +2,11 @@ import XCTest
 @testable import HabitTracker
 
 final class HabitTrackerTests: XCTestCase {
+    override func tearDown() {
+        MockURLProtocol.requestHandler = nil
+        super.tearDown()
+    }
+
     func testDailyHabitStreakCountsBackwardUntilGap() {
         let habit = Habit(
             id: UUID(),
@@ -483,6 +488,84 @@ final class HabitTrackerTests: XCTestCase {
         XCTAssertEqual(environment.completion(for: habit, on: .now)?.count, 1)
         XCTAssertEqual(environment.completionHistory(for: habit).count, 1)
     }
+
+    @MainActor
+    func testRestoreSessionRefreshesExpiredAccessToken() async throws {
+        let user = SupabaseUser(id: UUID(), email: "test@example.com")
+        let sessionStore = SessionStore(
+            service: "HabitTracker.auth.tests.\(UUID().uuidString)",
+            account: "supabase.session"
+        )
+        defer { try? sessionStore.clear() }
+
+        try sessionStore.write(
+            SupabaseSession(
+                accessToken: "expired-access-token",
+                refreshToken: "valid-refresh-token",
+                user: user
+            )
+        )
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let urlSession = URLSession(configuration: configuration)
+        let supabaseURL = URL(string: "https://example.supabase.co")!
+
+        MockURLProtocol.requestHandler = { request in
+            switch (request.url?.path, request.url?.query) {
+            case ("/auth/v1/user", _):
+                let authHeader = request.value(forHTTPHeaderField: "Authorization")
+                if authHeader == "Bearer expired-access-token" {
+                    return (
+                        HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!,
+                        #"{"message":"Invalid JWT","code":"bad_jwt"}"#.data(using: .utf8)!
+                    )
+                }
+
+                XCTFail("Unexpected user request authorization header: \(authHeader ?? "nil")")
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!,
+                    Data()
+                )
+
+            case ("/auth/v1/token", "grant_type=refresh_token"):
+                let refreshed = """
+                {
+                  "access_token": "fresh-access-token",
+                  "refresh_token": "fresh-refresh-token",
+                  "user": {
+                    "id": "\(user.id.uuidString.lowercased())",
+                    "email": "\(user.email)"
+                  }
+                }
+                """
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data(refreshed.utf8)
+                )
+
+            default:
+                XCTFail("Unexpected request: \(request.url?.absoluteString ?? "nil")")
+                return (
+                    HTTPURLResponse(url: supabaseURL, statusCode: 500, httpVersion: nil, headerFields: nil)!,
+                    Data()
+                )
+            }
+        }
+
+        let authService = SupabaseAuthService(
+            configuration: SupabaseConfiguration(url: supabaseURL, anonKey: "anon-key"),
+            urlSession: urlSession,
+            sessionStore: sessionStore
+        )
+
+        let restoredUser = try await authService.restoreSession()
+        let storedSession = try sessionStore.read()
+
+        XCTAssertEqual(restoredUser, AppUser(id: user.id, email: user.email))
+        XCTAssertEqual(storedSession?.accessToken, "fresh-access-token")
+        XCTAssertEqual(storedSession?.refreshToken, "fresh-refresh-token")
+    }
 }
 
 private struct FailingRemoteDataSource: HabitRemoteDataSource {
@@ -571,6 +654,7 @@ private actor StaleFetchCheckInRepository: CheckInRepository {
 private struct NoopReminderService: ReminderService {
     func requestAuthorization() async throws -> Bool { true }
     func rescheduleNotifications(for habits: [Habit]) async throws {}
+    func clearAllNotifications() async {}
 }
 
 @MainActor
@@ -582,4 +666,29 @@ private final class MockAuthService: AuthService {
     func signUp(email: String, password: String) async throws -> AppUser { throw AppError.network("Unused") }
     func signOut() async throws {}
     func authorizationHeader() -> String? { nil }
+}
+
+private final class MockURLProtocol: URLProtocol {
+    static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let handler = Self.requestHandler else {
+            client?.urlProtocol(self, didFailWithError: AppError.network("Missing request handler"))
+            return
+        }
+
+        do {
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
 }
