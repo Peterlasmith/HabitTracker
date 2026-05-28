@@ -156,7 +156,9 @@ actor DefaultCheckInRepository: CheckInRepository {
         if lhs.createdAt != rhs.createdAt {
             return lhs.createdAt > rhs.createdAt ? lhs : rhs
         }
-        return lhs.id.uuidString > rhs.id.uuidString ? lhs : rhs
+        // When timestamps tie, prefer the later merge candidate so local state
+        // wins over a stale remote copy during startup sync.
+        return rhs
     }
 
     private func completionKey(for completion: HabitCompletion) -> CompletionKey {

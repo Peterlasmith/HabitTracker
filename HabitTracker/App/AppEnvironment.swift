@@ -363,7 +363,7 @@ final class AppEnvironment: ObservableObject {
 
     private nonisolated func preferredCompletion(between lhs: HabitCompletion, and rhs: HabitCompletion) -> HabitCompletion {
         if lhs.createdAt == rhs.createdAt {
-            return lhs.id.uuidString > rhs.id.uuidString ? lhs : rhs
+            return rhs
         }
         return lhs.createdAt > rhs.createdAt ? lhs : rhs
     }

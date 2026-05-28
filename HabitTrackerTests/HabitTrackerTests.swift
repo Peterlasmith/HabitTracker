@@ -360,6 +360,49 @@ final class HabitTrackerTests: XCTestCase {
         XCTAssertEqual(synced.first?.count, 0)
     }
 
+    func testSyncPrefersLocalCompletionWhenTimestampsTie() async throws {
+        let baseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let localStore = LocalStore(baseURL: baseURL)
+        let remote = DuplicateCompletionRemoteDataSource()
+        let repository = await MainActor.run {
+            DefaultCheckInRepository(
+                localStore: localStore,
+                remote: remote,
+                authService: MockAuthService()
+            )
+        }
+
+        let userId = UUID()
+        let habitId = UUID()
+        let day = Calendar.current.startOfDay(for: .now)
+        let sharedTimestamp = day.addingTimeInterval(120)
+        let remoteCompletion = HabitCompletion(
+            id: UUID(uuidString: "ffffffff-ffff-ffff-ffff-ffffffffffff") ?? UUID(),
+            habitId: habitId,
+            userId: userId,
+            date: day,
+            count: 0,
+            note: "",
+            createdAt: sharedTimestamp
+        )
+        let localCompletion = HabitCompletion(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000001") ?? UUID(),
+            habitId: habitId,
+            userId: userId,
+            date: day,
+            count: 1,
+            note: "",
+            createdAt: sharedTimestamp
+        )
+
+        try await localStore.writeCompletions([localCompletion])
+        await remote.setCompletions([remoteCompletion])
+
+        let synced = try await repository.sync()
+        XCTAssertEqual(synced.count, 1)
+        XCTAssertEqual(synced.first?.count, 1)
+    }
+
     @MainActor
     func testRecordCompletionOnlyChangesTappedHabit() async {
         let habitRepository = StubHabitRepository()
