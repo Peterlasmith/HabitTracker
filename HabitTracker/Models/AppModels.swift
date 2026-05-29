@@ -33,6 +33,10 @@ enum HabitTargetType: String, Codable, CaseIterable, Identifiable {
     case count
 
     var id: String { rawValue }
+
+    static var supportedCases: [HabitTargetType] {
+        [.binary]
+    }
 }
 
 enum HabitTargetPeriod: String, Codable, CaseIterable, Identifiable {
@@ -147,9 +151,9 @@ struct Habit: Codable, Equatable, Identifiable {
         self.emojiOrIcon = emojiOrIcon
         self.color = color
         self.schedule = schedule
-        self.targetType = targetType
-        self.targetCount = targetCount
-        self.targetPeriod = targetPeriod ?? Habit.defaultTargetPeriod(for: targetType)
+        self.targetType = Habit.normalizedTargetType(targetType)
+        self.targetCount = Habit.normalizedTargetCount(for: targetType, targetCount: targetCount)
+        self.targetPeriod = .day
         self.reminderTime = reminderTime
         self.createdAt = createdAt
         self.archivedAt = archivedAt
@@ -163,10 +167,11 @@ struct Habit: Codable, Equatable, Identifiable {
         emojiOrIcon = try container.decode(String.self, forKey: .emojiOrIcon)
         color = try container.decode(HabitColor.self, forKey: .color)
         schedule = try container.decode(HabitSchedule.self, forKey: .schedule)
-        targetType = try container.decode(HabitTargetType.self, forKey: .targetType)
-        targetCount = try container.decode(Int.self, forKey: .targetCount)
-        targetPeriod = try container.decodeIfPresent(HabitTargetPeriod.self, forKey: .targetPeriod)
-            ?? Habit.defaultTargetPeriod(for: targetType)
+        let decodedTargetType = try container.decode(HabitTargetType.self, forKey: .targetType)
+        let decodedTargetCount = try container.decode(Int.self, forKey: .targetCount)
+        targetType = Habit.normalizedTargetType(decodedTargetType)
+        targetCount = Habit.normalizedTargetCount(for: decodedTargetType, targetCount: decodedTargetCount)
+        targetPeriod = .day
         reminderTime = try container.decodeIfPresent(DateComponents.self, forKey: .reminderTime)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         archivedAt = try container.decodeIfPresent(Date.self, forKey: .archivedAt)
@@ -180,9 +185,9 @@ struct Habit: Codable, Equatable, Identifiable {
         try container.encode(emojiOrIcon, forKey: .emojiOrIcon)
         try container.encode(color, forKey: .color)
         try container.encode(schedule, forKey: .schedule)
-        try container.encode(targetType, forKey: .targetType)
+        try container.encode(Habit.normalizedTargetType(targetType), forKey: .targetType)
         try container.encode(targetCount, forKey: .targetCount)
-        try container.encode(targetPeriod, forKey: .targetPeriod)
+        try container.encode(HabitTargetPeriod.day, forKey: .targetPeriod)
         try container.encode(reminderTime, forKey: .reminderTime)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(archivedAt, forKey: .archivedAt)
@@ -192,28 +197,13 @@ struct Habit: Codable, Equatable, Identifiable {
         archivedAt != nil
     }
 
-    var effectiveTargetPeriod: HabitTargetPeriod {
-        targetType == .binary ? .day : targetPeriod
-    }
-
     func isDue(on date: Date, calendar: Calendar = .current) -> Bool {
         !isArchived && schedule.isDue(on: date, calendar: calendar)
     }
 
     func currentPeriodRange(containing date: Date, calendar: Calendar = .current) -> DateInterval {
-        let start: Date
-        let end: Date
-
-        switch effectiveTargetPeriod {
-        case .day:
-            start = calendar.startOfDay(for: date)
-            end = start
-        case .week:
-            start = calendar.startOfWeek(containing: date)
-            end = calendar.endOfWeek(containing: date)
-        }
-
-        return DateInterval(start: start, end: end)
+        let start = calendar.startOfDay(for: date)
+        return DateInterval(start: start, end: start)
     }
 
     func periodProgress(
@@ -221,31 +211,14 @@ struct Habit: Codable, Equatable, Identifiable {
         completions: [HabitCompletion],
         calendar: Calendar = .current
     ) -> HabitPeriodProgress {
-        switch targetType {
-        case .binary:
-            let day = calendar.startOfDay(for: referenceDate)
-            let completion = completions.first { calendar.isDate($0.date, inSameDayAs: day) }
-            let completed = completion?.count ?? 0 > 0 ? 1 : 0
-            return HabitPeriodProgress(
-                period: currentPeriodRange(containing: referenceDate, calendar: calendar),
-                completedCount: completed,
-                targetCount: 1
-            )
-        case .count:
-            let period = currentPeriodRange(containing: referenceDate, calendar: calendar)
-            let endDate = min(calendar.startOfDay(for: referenceDate), period.end)
-            let total = completions.reduce(into: 0) { partialResult, completion in
-                let day = calendar.startOfDay(for: completion.date)
-                guard day >= period.start, day <= endDate, isDue(on: day, calendar: calendar) else { return }
-                partialResult += max(completion.count, 0)
-            }
-
-            return HabitPeriodProgress(
-                period: period,
-                completedCount: total,
-                targetCount: targetCount
-            )
-        }
+        let day = calendar.startOfDay(for: referenceDate)
+        let completion = completions.first { calendar.isDate($0.date, inSameDayAs: day) }
+        let completed = completion?.count ?? 0 > 0 ? 1 : 0
+        return HabitPeriodProgress(
+            period: currentPeriodRange(containing: referenceDate, calendar: calendar),
+            completedCount: completed,
+            targetCount: 1
+        )
     }
 
     func isComplete(
@@ -264,12 +237,17 @@ struct Habit: Codable, Equatable, Identifiable {
         completions.first { calendar.isDate($0.date, inSameDayAs: date) }?.count ?? 0
     }
 
-    private static func defaultTargetPeriod(for type: HabitTargetType) -> HabitTargetPeriod {
+    private static func normalizedTargetType(_ type: HabitTargetType) -> HabitTargetType {
         switch type {
-        case .binary:
-            return .day
-        case .count:
-            return .week
+        case .binary, .count:
+            return .binary
+        }
+    }
+
+    private static func normalizedTargetCount(for type: HabitTargetType, targetCount: Int) -> Int {
+        switch type {
+        case .binary, .count:
+            return 1
         }
     }
 }
@@ -282,6 +260,10 @@ struct HabitCompletion: Codable, Equatable, Identifiable {
     var count: Int
     var note: String
     var createdAt: Date
+}
+
+func normalizedCheckCount(_ count: Int) -> Int {
+    count > 0 ? 1 : 0
 }
 
 struct HabitPeriodProgress: Equatable {
@@ -322,20 +304,15 @@ struct HabitWithProgress: Identifiable, Equatable {
 
     var progress: Double {
         guard let completion else { return 0 }
-        switch habit.targetType {
-        case .binary:
-            return completion.count > 0 ? 1 : 0
-        case .count:
-            return min(Double(completion.count) / Double(max(habit.targetCount, 1)), 1)
-        }
+        return normalizedCheckCount(completion.count) > 0 ? 1 : 0
     }
 
     var isComplete: Bool {
-        completion?.count ?? 0 > 0
+        normalizedCheckCount(completion?.count ?? 0) > 0
     }
 
     var streakLabel: String {
-        habit.targetType == .binary ? "Done" : "\(completion?.count ?? 0)/\(habit.targetCount)"
+        "Done"
     }
 }
 
@@ -346,45 +323,29 @@ enum StreakCalculator {
         referenceDate: Date = .now,
         calendar: Calendar = .current
     ) -> Int {
-        switch habit.effectiveTargetPeriod {
-        case .day:
-            let normalizedCompletions = Dictionary(uniqueKeysWithValues: completions.map {
-                (calendar.startOfDay(for: $0.date), $0)
-            })
+        let normalizedCompletions = Dictionary(uniqueKeysWithValues: completions.map {
+            (calendar.startOfDay(for: $0.date), $0)
+        })
 
-            var streak = 0
-            var cursor = calendar.startOfDay(for: referenceDate)
+        var streak = 0
+        var cursor = calendar.startOfDay(for: referenceDate)
 
-            while true {
-                guard habit.isDue(on: cursor, calendar: calendar) else {
-                    guard let previous = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
-                    cursor = previous
-                    continue
-                }
-
-                guard let completion = normalizedCompletions[cursor], completion.count > 0 else {
-                    break
-                }
-
-                streak += 1
+        while true {
+            guard habit.isDue(on: cursor, calendar: calendar) else {
                 guard let previous = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
                 cursor = previous
+                continue
             }
 
-            return streak
-        case .week:
-            var streak = 0
-            var cursor = calendar.startOfWeek(containing: referenceDate)
-
-            while true {
-                let progress = habit.periodProgress(referenceDate: cursor, completions: completions, calendar: calendar)
-                guard progress.isComplete else { break }
-                streak += 1
-                guard let previousWeek = calendar.date(byAdding: .day, value: -7, to: cursor) else { break }
-                cursor = previousWeek
+            guard let completion = normalizedCompletions[cursor], normalizedCheckCount(completion.count) > 0 else {
+                break
             }
 
-            return streak
+            streak += 1
+            guard let previous = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+            cursor = previous
         }
+
+        return streak
     }
 }

@@ -4,7 +4,7 @@ struct TrendsView: View {
     @EnvironmentObject private var environment: AppEnvironment
 
     private let calendar = Calendar.autoupdatingCurrent
-    private let windowLength = 8
+    private let windowLength = 14
 
     var body: some View {
         let habits = activeHabits
@@ -52,9 +52,9 @@ struct TrendsView: View {
     private func overviewCards(snapshot: TrendSnapshot) -> some View {
         HStack(alignment: .top, spacing: 10) {
             trendStatCard(
-                title: "Last 8 weeks",
+                title: "Last 14 days",
                 value: "\(snapshot.currentCompletionRate)%",
-                detail: snapshot.currentDetail
+                detail: "\(snapshot.currentCompleted) of \(max(snapshot.currentEligible, 1)) check-ins"
             )
 
             trendStatCard(
@@ -80,7 +80,7 @@ struct TrendsView: View {
             Text(detail)
                 .font(AppTheme.sans(size: 12))
                 .foregroundStyle(AppTheme.textSecondary)
-                .lineLimit(3)
+                .lineLimit(2)
         }
         .frame(maxWidth: .infinity, minHeight: 140, alignment: .topLeading)
         .appCard()
@@ -88,14 +88,14 @@ struct TrendsView: View {
 
     private func trendChart(snapshot: TrendSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Weekly progress trend")
+            Text("Daily completion trend")
                 .font(AppTheme.sans(size: 11, weight: .semibold))
                 .foregroundStyle(AppTheme.textSecondary)
                 .textCase(.uppercase)
                 .tracking(1.1)
 
-            HStack(alignment: .bottom, spacing: 6) {
-                ForEach(snapshot.weeks) { week in
+            HStack(alignment: .bottom, spacing: 4) {
+                ForEach(snapshot.days) { day in
                     VStack(spacing: 8) {
                         ZStack(alignment: .bottom) {
                             Capsule()
@@ -103,25 +103,27 @@ struct TrendsView: View {
                                 .frame(height: 104)
 
                             Capsule()
-                                .fill(barColor(for: week.rate))
-                                .frame(height: max(CGFloat(week.rate) * 104, week.eligibleUnits > 0 ? 10 : 4))
+                                .fill(barColor(for: day.rate))
+                                .frame(height: max(CGFloat(day.rate) * 104, day.eligible > 0 ? 10 : 4))
                         }
 
-                        Text(shortLabel(for: week.weekStart))
+                        Text(shortLabel(for: day.date))
                             .font(AppTheme.sans(size: 11, weight: .semibold))
                             .foregroundStyle(AppTheme.textSecondary)
                             .lineLimit(1)
 
-                        Text(week.eligibleUnits == 0 ? "0" : "\(Int((week.rate * 100).rounded()))")
+                        Text(day.eligible == 0 ? "0" : "\(Int((day.rate * 100).rounded()))")
                             .font(AppTheme.sans(size: 10))
                             .foregroundStyle(AppTheme.textSecondary)
                             .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                     }
                     .frame(maxWidth: .infinity)
                 }
             }
 
-            Text("Binary habits contribute due-day completion. Count habits contribute weekly progress toward their target.")
+            Text("Each bar shows the share of scheduled check-ins you completed that day.")
                 .font(AppTheme.sans(size: 12))
                 .foregroundStyle(AppTheme.textSecondary)
         }
@@ -143,7 +145,10 @@ struct TrendsView: View {
     }
 
     private func shortLabel(for date: Date) -> String {
-        date.formatted(.dateTime.month(.abbreviated).day())
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.dateFormat = "E"
+        return formatter.string(from: date).prefix(1).uppercased()
     }
 
     private func barColor(for rate: Double) -> Color {
@@ -154,23 +159,23 @@ struct TrendsView: View {
     }
 
     private func trendSnapshot(for habits: [Habit], referenceDate: Date) -> TrendSnapshot {
-        let currentWindowEnd = calendar.startOfWeek(containing: referenceDate)
-        let currentWindowStart = calendar.date(byAdding: .day, value: -7 * (windowLength - 1), to: currentWindowEnd) ?? currentWindowEnd
-        let previousWindowEnd = calendar.date(byAdding: .day, value: -7, to: currentWindowStart) ?? currentWindowStart
-        let previousWindowStart = calendar.date(byAdding: .day, value: -7 * (windowLength - 1), to: previousWindowEnd) ?? previousWindowEnd
+        let currentWindowEnd = referenceDate
+        let currentWindowStart = calendar.date(byAdding: .day, value: -(windowLength - 1), to: currentWindowEnd) ?? currentWindowEnd
+        let previousWindowEnd = calendar.date(byAdding: .day, value: -1, to: currentWindowStart) ?? currentWindowStart
+        let previousWindowStart = calendar.date(byAdding: .day, value: -(windowLength - 1), to: previousWindowEnd) ?? previousWindowEnd
 
-        let currentWeeks = buildWeeklyTrend(from: currentWindowStart, through: currentWindowEnd, habits: habits, referenceDate: referenceDate)
-        let previousWeeks = buildWeeklyTrend(from: previousWindowStart, through: previousWindowEnd, habits: habits, referenceDate: referenceDate)
+        let currentDays = buildDailyTrend(from: currentWindowStart, through: currentWindowEnd, habits: habits)
+        let previousDays = buildDailyTrend(from: previousWindowStart, through: previousWindowEnd, habits: habits)
 
-        let currentCompleted = currentWeeks.reduce(0.0) { $0 + $1.completedUnits }
-        let currentEligible = currentWeeks.reduce(0) { $0 + $1.eligibleUnits }
-        let previousCompleted = previousWeeks.reduce(0.0) { $0 + $1.completedUnits }
-        let previousEligible = previousWeeks.reduce(0) { $0 + $1.eligibleUnits }
+        let currentCompleted = currentDays.reduce(0) { $0 + $1.completed }
+        let currentEligible = currentDays.reduce(0) { $0 + $1.eligible }
+        let previousCompleted = previousDays.reduce(0) { $0 + $1.completed }
+        let previousEligible = previousDays.reduce(0) { $0 + $1.eligible }
         let currentRate = completionRate(completed: currentCompleted, eligible: currentEligible)
         let previousRate = completionRate(completed: previousCompleted, eligible: previousEligible)
 
         return TrendSnapshot(
-            weeks: currentWeeks,
+            days: currentDays,
             currentCompleted: currentCompleted,
             currentEligible: currentEligible,
             currentCompletionRate: currentRate,
@@ -178,68 +183,41 @@ struct TrendsView: View {
         )
     }
 
-    private func buildWeeklyTrend(from start: Date, through end: Date, habits: [Habit], referenceDate: Date) -> [WeeklyTrendPoint] {
-        var weeks: [WeeklyTrendPoint] = []
-        var cursor = calendar.startOfWeek(containing: start)
-        let finalWeek = calendar.startOfWeek(containing: end)
+    private func buildDailyTrend(from start: Date, through end: Date, habits: [Habit]) -> [DailyTrendPoint] {
+        calendar.days(from: start, through: end).map { date in
+            var completed = 0
+            var eligible = 0
 
-        while cursor <= finalWeek {
-            let weekEnd = min(calendar.endOfWeek(containing: cursor), referenceDate)
-            let weekDates = calendar.days(from: cursor, through: weekEnd)
-            var completedUnits = 0.0
-            var eligibleUnits = 0
-
-            for habit in habits {
-                let completions = environment.completionHistory(for: habit)
-                switch habit.targetType {
-                case .binary:
-                    for date in weekDates where habit.isDue(on: date, calendar: calendar) {
-                        eligibleUnits += 1
-                        if habit.isComplete(referenceDate: date, completions: completions, calendar: calendar) {
-                            completedUnits += 1
-                        }
-                    }
-                case .count:
-                    guard weekDates.contains(where: { habit.isDue(on: $0, calendar: calendar) }) else { continue }
-                    eligibleUnits += 1
-                    completedUnits += habit.periodProgress(referenceDate: cursor, completions: completions, calendar: calendar).progress
+            for habit in habits where habit.isDue(on: date, calendar: calendar) {
+                eligible += 1
+                if normalizedCheckCount(completion(for: habit, on: date)?.count ?? 0) > 0 {
+                    completed += 1
                 }
             }
 
-            weeks.append(
-                WeeklyTrendPoint(
-                    weekStart: cursor,
-                    completedUnits: completedUnits,
-                    eligibleUnits: eligibleUnits
-                )
-            )
-
-            guard let nextWeek = calendar.date(byAdding: .day, value: 7, to: cursor) else { break }
-            cursor = nextWeek
+            return DailyTrendPoint(date: date, completed: completed, eligible: eligible)
         }
-
-        return weeks
     }
 
-    private func completionRate(completed: Double, eligible: Int) -> Int {
+    private func completionRate(completed: Int, eligible: Int) -> Int {
         guard eligible > 0 else { return 0 }
-        return Int((completed / Double(eligible) * 100).rounded())
+        return Int((Double(completed) / Double(eligible) * 100).rounded())
+    }
+
+    private func completion(for habit: Habit, on date: Date) -> HabitCompletion? {
+        environment.completion(for: habit, on: date)
     }
 }
 
 private struct TrendSnapshot {
-    let weeks: [WeeklyTrendPoint]
-    let currentCompleted: Double
+    let days: [DailyTrendPoint]
+    let currentCompleted: Int
     let currentEligible: Int
     let currentCompletionRate: Int
     let previousCompletionRate: Int
 
     var delta: Int {
         currentCompletionRate - previousCompletionRate
-    }
-
-    var currentDetail: String {
-        "\(Int(currentCompleted.rounded())) of \(max(currentEligible, 1)) goal units met or in progress"
     }
 
     var momentumLabel: String {
@@ -249,9 +227,9 @@ private struct TrendSnapshot {
     }
 
     var momentumDetail: String {
-        if delta > 0 { return "Up from \(previousCompletionRate)% in the prior 8 weeks" }
-        if delta < 0 { return "Down from \(previousCompletionRate)% in the prior 8 weeks" }
-        return "Matching the prior 8 weeks at \(previousCompletionRate)%"
+        if delta > 0 { return "Up from \(previousCompletionRate)% in the prior 14 days" }
+        if delta < 0 { return "Down from \(previousCompletionRate)% in the prior 14 days" }
+        return "Matching the prior 14 days at \(previousCompletionRate)%"
     }
 
     var subtitle: String {
@@ -260,26 +238,26 @@ private struct TrendSnapshot {
         }
 
         if delta > 0 {
-            return "Your weekly consistency is building."
+            return "Your consistency is building over the last two weeks."
         }
 
         if delta < 0 {
-            return "Your recent pace is softer than the stretch before it."
+            return "Your recent pace is softer than the two weeks before it."
         }
 
-        return "Your rhythm has held steady lately."
+        return "Your rhythm has held steady across the last two weeks."
     }
 }
 
-private struct WeeklyTrendPoint: Identifiable {
-    let weekStart: Date
-    let completedUnits: Double
-    let eligibleUnits: Int
+private struct DailyTrendPoint: Identifiable {
+    let date: Date
+    let completed: Int
+    let eligible: Int
 
-    var id: Date { weekStart }
+    var id: Date { date }
 
     var rate: Double {
-        guard eligibleUnits > 0 else { return 0 }
-        return completedUnits / Double(eligibleUnits)
+        guard eligible > 0 else { return 0 }
+        return Double(completed) / Double(eligible)
     }
 }

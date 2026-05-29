@@ -11,11 +11,9 @@ struct HabitDetailView: View {
     var body: some View {
         let history = environment.completionHistory(for: habit)
         let streak = StreakCalculator.currentStreak(for: habit, completions: history)
-        let progress = habit.periodProgress(referenceDate: .now, completions: history)
         let recordedCount = history.reduce(0) { partialResult, completion in
-            partialResult + max(completion.count, 0)
+            partialResult + normalizedCheckCount(completion.count)
         }
-        let streakLabel = habit.targetType == .binary ? "days" : "weeks"
 
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -29,8 +27,8 @@ struct HabitDetailView: View {
                         .foregroundStyle(AppTheme.textSecondary)
 
                     HStack(spacing: 10) {
-                        detailStat(title: "Current streak", value: "\(streak) \(streakLabel)")
-                        detailStat(title: habit.targetType == .binary ? "Recorded" : "This week", value: habit.targetType == .binary ? "\(recordedCount)" : "\(progress.completedCount)/\(habit.targetCount)")
+                        detailStat(title: "Current streak", value: "\(streak) days")
+                        detailStat(title: "Recorded", value: "\(recordedCount)")
                     }
                 }
                 .appCard()
@@ -70,7 +68,7 @@ struct HabitDetailView: View {
 
                                 Text(completionLabel(completion))
                                     .font(AppTheme.sans(size: 13, weight: .semibold))
-                                    .foregroundStyle(completion.count > 0 ? AppTheme.success : AppTheme.textSecondary)
+                                    .foregroundStyle(normalizedCheckCount(completion.count) > 0 ? AppTheme.success : AppTheme.textSecondary)
                             }
                         }
                     }
@@ -117,12 +115,7 @@ struct HabitDetailView: View {
     }
 
     private var habitTargetLabel: String {
-        switch habit.targetType {
-        case .binary:
-            return "Complete once"
-        case .count:
-            return "\(habit.targetCount) times per week"
-        }
+        "Complete once"
     }
 
     private var reminderLabel: String {
@@ -170,11 +163,6 @@ struct HabitDetailView: View {
     }
 
     private func completionLabel(_ completion: HabitCompletion) -> String {
-        switch habit.targetType {
-        case .binary:
-            return completion.count > 0 ? "Done" : "Skipped"
-        case .count:
-            return "\(completion.count) check-in\(completion.count == 1 ? "" : "s")"
-        }
+        normalizedCheckCount(completion.count) > 0 ? "Done" : "Skipped"
     }
 }

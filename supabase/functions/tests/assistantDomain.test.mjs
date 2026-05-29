@@ -19,7 +19,7 @@ const readingHabit = {
   schedule_type: "weekdays",
   schedule_weekdays: [2, 4, 6],
   target_type: "count",
-  target_count: 2,
+  target_count: 3,
   target_period: "week",
   reminder_hour: 8,
   reminder_minute: 30,
@@ -46,7 +46,7 @@ const completions = [
     id: "completion-3",
     habit_id: "habit-1",
     date: "2026-05-22T00:00:00.000Z",
-    count: 1,
+    count: 0,
     note: "",
     created_at: "2026-05-22T01:00:00.000Z",
   },
@@ -64,7 +64,7 @@ test("currentStreak stops when a due day is incomplete", () => {
     new Date("2026-05-27T12:00:00.000Z")
   );
 
-  assert.equal(streak, 1);
+  assert.equal(streak, 2);
 });
 
 test("adherence counts only due days for the rolling window", () => {
@@ -77,12 +77,12 @@ test("adherence counts only due days for the rolling window", () => {
 
   assert.deepEqual(summary, {
     completed_days: 2,
-    due_days: 2,
-    ratio: 1,
+    due_days: 3,
+    ratio: 0.6667,
   });
 });
 
-test("buildHabitResponse returns planning-friendly derived fields", () => {
+test("buildHabitResponse normalizes legacy count habits into binary targets", () => {
   const response = buildHabitResponse(readingHabit, completions, {
     referenceDate: new Date("2026-05-27T12:00:00.000Z"),
     timeZone: "UTC",
@@ -90,14 +90,16 @@ test("buildHabitResponse returns planning-friendly derived fields", () => {
 
   assert.equal(response.schedule.type, "weekdays");
   assert.deepEqual(response.schedule.weekdays, ["monday", "wednesday", "friday"]);
-  assert.equal(response.target.period, "week");
+  assert.equal(response.target.type, "binary");
+  assert.equal(response.target.count, 1);
+  assert.equal(response.target.period, "day");
   assert.equal(response.reminder.enabled, true);
   assert.equal(response.derived.due_today, true);
-  assert.equal(response.derived.current_streak, 1);
+  assert.equal(response.derived.current_streak, 2);
   assert.equal(response.recent_completions.length, 3);
 });
 
-test("buildCompletionResponse derives completion status from habit targets", () => {
+test("buildCompletionResponse derives completion status from a simple done/not-done model", () => {
   const complete = buildCompletionResponse(completions[0], readingHabit, completions, {
     referenceDate: new Date("2026-05-27T12:00:00.000Z"),
     timeZone: "UTC",

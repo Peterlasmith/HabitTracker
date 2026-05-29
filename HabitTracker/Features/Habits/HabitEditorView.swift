@@ -9,8 +9,6 @@ struct HabitEditorView: View {
     @State private var name = ""
     @State private var emoji = "🌿"
     @State private var color: HabitColor = .teal
-    @State private var targetType: HabitTargetType = .binary
-    @State private var targetCount = 1
     @State private var isDaily = true
     @State private var selectedWeekdays = Set(Weekday.allCases)
     @State private var remindersEnabled = false
@@ -69,7 +67,7 @@ struct HabitEditorView: View {
                     .fill(color.color)
                     .frame(width: 14, height: 14)
 
-                Text(targetType == .binary ? "Complete once per scheduled day" : "\(targetCount) times per week")
+                Text("Complete once per scheduled day")
                     .font(AppTheme.sans(size: 13))
                     .foregroundStyle(AppTheme.textSecondary)
             }
@@ -116,23 +114,14 @@ struct HabitEditorView: View {
 
     private var goalSection: some View {
         sectionCard(title: "Goal") {
-            VStack(spacing: 14) {
-                Picker("Target type", selection: $targetType) {
-                    ForEach(HabitTargetType.allCases) { type in
-                        Text(type.rawValue.capitalized).tag(type)
-                    }
-                }
-                .pickerStyle(.segmented)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Simple daily check-off")
+                    .font(AppTheme.sans(size: 16, weight: .medium))
+                    .foregroundStyle(AppTheme.textPrimary)
 
-                if targetType == .count {
-                    Stepper("Weekly target: \(targetCount) times", value: $targetCount, in: 1...20)
-                        .font(AppTheme.sans(size: 16, weight: .medium))
-                        .foregroundStyle(AppTheme.textPrimary)
-
-                    Text("Each check-in on a scheduled day adds to this week's total.")
-                        .font(AppTheme.sans(size: 12))
-                        .foregroundStyle(AppTheme.textSecondary)
-                }
+                Text("A habit is either done or not done on each scheduled day.")
+                    .font(AppTheme.sans(size: 12))
+                    .foregroundStyle(AppTheme.textSecondary)
             }
         }
     }
@@ -220,8 +209,6 @@ struct HabitEditorView: View {
         name = existingHabit.name
         emoji = existingHabit.emojiOrIcon
         color = existingHabit.color
-        targetType = existingHabit.targetType
-        targetCount = existingHabit.targetCount
         remindersEnabled = existingHabit.reminderTime != nil
         if let reminderTime = existingHabit.reminderTime,
            let date = Calendar.current.date(from: reminderTime) {
@@ -277,9 +264,9 @@ struct HabitEditorView: View {
             emojiOrIcon: emoji,
             color: color,
             schedule: schedule,
-            targetType: targetType,
-            targetCount: targetType == .binary ? 1 : targetCount,
-            targetPeriod: targetType == .binary ? .day : .week,
+            targetType: .binary,
+            targetCount: 1,
+            targetPeriod: .day,
             reminderTime: timeComponents,
             createdAt: existingHabit?.createdAt ?? .now,
             archivedAt: existingHabit?.archivedAt

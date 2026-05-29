@@ -10,8 +10,8 @@ final class RepositoryMappingTests: XCTestCase {
             emojiOrIcon: "🧘",
             color: .moss,
             schedule: .weekdays([.monday, .thursday]),
-            targetType: .count,
-            targetCount: 3,
+            targetType: .binary,
+            targetCount: 1,
             reminderTime: DateComponents(hour: 7, minute: 15),
             createdAt: .now,
             archivedAt: nil
@@ -19,7 +19,7 @@ final class RepositoryMappingTests: XCTestCase {
 
         let row = HabitRow(habit: habit)
         XCTAssertEqual(row.habit.schedule, habit.schedule)
-        XCTAssertEqual(row.habit.targetPeriod, .week)
+        XCTAssertEqual(row.habit.targetPeriod, .day)
         XCTAssertEqual(row.habit.reminderTime?.hour, 7)
         XCTAssertEqual(row.habit.reminderTime?.minute, 15)
     }

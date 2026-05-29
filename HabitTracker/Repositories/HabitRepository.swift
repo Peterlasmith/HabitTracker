@@ -392,9 +392,9 @@ struct HabitRow: Codable {
             self.scheduleType = "weekdays"
             self.scheduleWeekdays = days.map(\.rawValue).sorted()
         }
-        self.targetType = habit.targetType.rawValue
-        self.targetCount = habit.targetCount
-        self.targetPeriod = habit.targetPeriod.rawValue
+        self.targetType = HabitTargetType.binary.rawValue
+        self.targetCount = 1
+        self.targetPeriod = HabitTargetPeriod.day.rawValue
         self.reminderHour = habit.reminderTime?.hour
         self.reminderMinute = habit.reminderTime?.minute
         self.createdAt = habit.createdAt
@@ -412,8 +412,7 @@ struct HabitRow: Codable {
         scheduleWeekdays = try container.decode([Int].self, forKey: .scheduleWeekdays)
         targetType = try container.decode(String.self, forKey: .targetType)
         targetCount = try container.decode(Int.self, forKey: .targetCount)
-        targetPeriod = try container.decodeIfPresent(String.self, forKey: .targetPeriod)
-            ?? (targetType == HabitTargetType.count.rawValue ? HabitTargetPeriod.week.rawValue : HabitTargetPeriod.day.rawValue)
+        targetPeriod = HabitTargetPeriod.day.rawValue
         reminderHour = try container.decodeIfPresent(Int.self, forKey: .reminderHour)
         reminderMinute = try container.decodeIfPresent(Int.self, forKey: .reminderMinute)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
@@ -448,9 +447,9 @@ struct HabitRow: Codable {
             schedule: scheduleType == "daily"
                 ? .daily
                 : .weekdays(Set(scheduleWeekdays.compactMap(Weekday.init(rawValue:)))),
-            targetType: HabitTargetType(rawValue: targetType) ?? .binary,
-            targetCount: targetCount,
-            targetPeriod: HabitTargetPeriod(rawValue: targetPeriod),
+            targetType: .binary,
+            targetCount: 1,
+            targetPeriod: .day,
             reminderTime: reminderHour == nil ? nil : DateComponents(hour: reminderHour, minute: reminderMinute ?? 0),
             createdAt: createdAt,
             archivedAt: archivedAt
@@ -482,7 +481,7 @@ struct HabitCompletionRow: Codable {
         self.habitId = completion.habitId
         self.userId = completion.userId
         self.date = completion.date
-        self.count = completion.count
+        self.count = normalizedCheckCount(completion.count)
         self.note = completion.note
         self.createdAt = completion.createdAt
     }
@@ -493,7 +492,7 @@ struct HabitCompletionRow: Codable {
             habitId: habitId,
             userId: userId,
             date: date,
-            count: count,
+            count: normalizedCheckCount(count),
             note: note,
             createdAt: createdAt
         )

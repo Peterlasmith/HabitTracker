@@ -25,9 +25,9 @@ struct OnboardingView: View {
                     .foregroundStyle(AppTheme.textSecondary)
 
                 VStack(alignment: .leading, spacing: 16) {
-                    onboardingRow(icon: "checklist", title: "Flexible habits", subtitle: "Daily check-offs or weekly count goals on the days you choose.")
+                    onboardingRow(icon: "checklist", title: "Flexible habits", subtitle: "Track daily habits on every day or only the weekdays you choose.")
                     onboardingRow(icon: "bell.badge.fill", title: "Helpful reminders", subtitle: "Set local notifications that match your real schedule.")
-                    onboardingRow(icon: "chart.line.uptrend.xyaxis", title: "Real momentum", subtitle: "See streaks, trends, and weekly progress at a glance.")
+                    onboardingRow(icon: "chart.line.uptrend.xyaxis", title: "Real momentum", subtitle: "See streaks, trends, and daily progress at a glance.")
                 }
 
                 Button {

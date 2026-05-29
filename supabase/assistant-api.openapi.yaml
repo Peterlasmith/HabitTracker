@@ -64,12 +64,12 @@ components:
           properties:
             type:
               type: string
-              enum: [binary, count]
+              enum: [binary]
             count:
               type: integer
             period:
               type: string
-              enum: [day, week]
+              enum: [day]
         reminder:
           type: object
           properties:

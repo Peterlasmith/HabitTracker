@@ -213,12 +213,13 @@ final class AppEnvironment: ObservableObject {
 
         let startOfDay = Calendar.current.startOfDay(for: date)
         let existing = self.completion(for: habit, on: startOfDay)
+        let normalizedCount = normalizedCheckCount(count)
         let completion = HabitCompletion(
             id: existing?.id ?? UUID(),
             habitId: habit.id,
             userId: user.id,
             date: startOfDay,
-            count: count,
+            count: normalizedCount,
             note: note,
             createdAt: existing?.createdAt ?? .now
         )
@@ -380,10 +381,12 @@ final class AppEnvironment: ObservableObject {
         let grouped = completions.reduce(into: [String: HabitCompletion]()) { result, completion in
             let day = calendar.startOfDay(for: completion.date)
             let key = "\(completion.habitId.uuidString)-\(day.timeIntervalSinceReferenceDate)"
+            var normalizedCompletion = completion
+            normalizedCompletion.count = normalizedCheckCount(completion.count)
             if let existing = result[key] {
-                result[key] = preferredCompletion(between: existing, and: completion)
+                result[key] = preferredCompletion(between: existing, and: normalizedCompletion)
             } else {
-                result[key] = completion
+                result[key] = normalizedCompletion
             }
         }
 
