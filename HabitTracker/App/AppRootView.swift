@@ -24,6 +24,8 @@ struct AppRootView: View {
                 OnboardingView()
             case .authentication:
                 AuthView()
+            case .accountDeleted:
+                AccountDeletedView(email: environment.recentlyDeletedAccountEmail)
             case .ready:
                 MainAppView()
             }
@@ -62,6 +64,42 @@ struct AppRootView: View {
                 .offset(x: 70, y: -70)
         }
         .ignoresSafeArea()
+    }
+}
+
+private struct AccountDeletedView: View {
+    let email: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Account deleted")
+                .font(AppTheme.serif(size: 30, weight: .semibold))
+                .foregroundStyle(AppTheme.textPrimary)
+
+            Text(message)
+                .font(AppTheme.sans(size: 15))
+                .foregroundStyle(AppTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 10) {
+                ProgressView()
+                    .tint(AppTheme.accent)
+
+                Text("Returning to sign in...")
+                    .font(AppTheme.sans(size: 14, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary)
+            }
+        }
+        .frame(maxWidth: 320, alignment: .leading)
+        .appCard()
+    }
+
+    private var message: String {
+        if let email, !email.isEmpty {
+            return "\(email) and its habit data have been permanently removed from HabitClaw."
+        }
+
+        return "Your HabitClaw account and its habit data have been permanently removed."
     }
 }
 

@@ -231,17 +231,40 @@ struct HabitEditorView: View {
     }
 
     private func saveHabit() async -> Bool {
-        guard let currentUser = environment.currentUser else {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return false }
+
+        guard let habit = habitForSaving() else {
             environment.errorMessage = "Your session expired. Sign in again to create a habit."
             return false
         }
+
+        if remindersEnabled {
+            environment.analyticsService.track(.enabledReminder)
+        }
+
+        return await environment.createOrUpdateHabit(habit)
+    }
+
+    private func habitForSaving() -> Habit? {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return nil }
+
+        let userId: UUID
+        if let existingHabit {
+            userId = existingHabit.userId
+        } else if let currentUser = environment.currentUser {
+            userId = currentUser.id
+        } else {
+            return nil
+        }
+
         let timeComponents = remindersEnabled ? Calendar.current.dateComponents([.hour, .minute], from: reminderDate) : nil
         let schedule: HabitSchedule = isDaily ? .daily : .weekdays(selectedWeekdays.isEmpty ? Set([.monday]) : selectedWeekdays)
 
-        let habit = Habit(
+        return Habit(
             id: existingHabit?.id ?? UUID(),
-            userId: currentUser.id,
+            userId: userId,
             name: trimmedName,
             emojiOrIcon: emoji,
             color: color,
@@ -252,11 +275,5 @@ struct HabitEditorView: View {
             createdAt: existingHabit?.createdAt ?? .now,
             archivedAt: existingHabit?.archivedAt
         )
-
-        if remindersEnabled {
-            environment.analyticsService.track(.enabledReminder)
-        }
-
-        return await environment.createOrUpdateHabit(habit)
     }
 }

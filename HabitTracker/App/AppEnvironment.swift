@@ -7,6 +7,7 @@ final class AppEnvironment: ObservableObject {
         case launching
         case onboarding
         case authentication
+        case accountDeleted
         case ready
     }
 
@@ -16,6 +17,7 @@ final class AppEnvironment: ObservableObject {
     @Published var completions: [HabitCompletion] = []
     @Published var errorMessage: String?
     @Published var isBusy = false
+    @Published var recentlyDeletedAccountEmail: String?
 
     let authService: SupabaseAuthService
     let habitRepository: HabitRepository
@@ -25,6 +27,7 @@ final class AppEnvironment: ObservableObject {
     let analyticsService: AnalyticsService
 
     private let defaults: UserDefaults
+    private let localStore: LocalStore
     private let onboardingKey = "hasCompletedOnboarding"
 
     // All properties are initialized on the main actor due to the enclosing class annotation.
@@ -42,11 +45,11 @@ final class AppEnvironment: ObservableObject {
         self.widgetSyncService = widgetSyncService
         self.analyticsService = analyticsService
         self.defaults = defaults
+        self.localStore = LocalStore()
 
-        let localStore = LocalStore()
         let remote = SupabaseHabitRemoteDataSource()
-        if let habitRepository { self.habitRepository = habitRepository } else { self.habitRepository = DefaultHabitRepository(localStore: localStore, remote: remote, authService: authService) }
-        if let checkInRepository { self.checkInRepository = checkInRepository } else { self.checkInRepository = DefaultCheckInRepository(localStore: localStore, remote: remote, authService: authService) }
+        if let habitRepository { self.habitRepository = habitRepository } else { self.habitRepository = DefaultHabitRepository(localStore: self.localStore, remote: remote, authService: authService) }
+        if let checkInRepository { self.checkInRepository = checkInRepository } else { self.checkInRepository = DefaultCheckInRepository(localStore: self.localStore, remote: remote, authService: authService) }
     }
 
     convenience init() {
@@ -69,9 +72,11 @@ final class AppEnvironment: ObservableObject {
             await MainActor.run { self.errorMessage = error.localizedDescription }
         }
 
-        await self.refreshLocalState()
         if self.currentUser != nil {
+            await self.refreshLocalState()
             try? await self.syncAll()
+        } else {
+            await self.clearPersistedUserState()
         }
         await self.syncReminders()
         await self.determinePhase()
@@ -109,14 +114,30 @@ final class AppEnvironment: ObservableObject {
     func signOut() async {
         await self.runBusyTask {
             try await self.authService.signOut()
-            await self.reminderService.clearAllNotifications()
-            await MainActor.run {
-                self.currentUser = nil
-                self.habits = []
-                self.completions = []
-            }
+            await self.clearPersistedUserState()
             await self.determinePhase()
         }
+    }
+
+    func deleteAccount(currentPassword: String) async -> Bool {
+        let deletedEmail = self.currentUser?.email
+
+        let result: Bool? = await self.runBusyTask {
+            try await self.authService.deleteAccount(currentPassword: currentPassword)
+            await self.clearPersistedUserState()
+            await MainActor.run {
+                self.recentlyDeletedAccountEmail = deletedEmail
+                self.phase = .accountDeleted
+            }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1.8))
+                self.recentlyDeletedAccountEmail = nil
+                await self.determinePhase()
+            }
+            return true
+        }
+
+        return result ?? false
     }
 
     func createOrUpdateHabit(_ habit: Habit) async -> Bool {
@@ -252,6 +273,17 @@ final class AppEnvironment: ObservableObject {
         self.widgetSyncService.publish(habits: habits, completions: self.normalizedCompletions(completions))
     }
 
+    private func clearPersistedUserState() async {
+        await self.reminderService.clearAllNotifications()
+        try? await self.localStore.clearAll()
+        self.widgetSyncService.clearPublishedData()
+        await MainActor.run {
+            self.currentUser = nil
+            self.habits = []
+            self.completions = []
+        }
+    }
+
     private func refreshLocalState() async {
         do {
             let fetchedHabits = try await self.habitRepository.fetchHabits()
@@ -277,6 +309,8 @@ final class AppEnvironment: ObservableObject {
         let didCompleteOnboarding = self.defaults.bool(forKey: self.onboardingKey)
         if !didCompleteOnboarding {
             await MainActor.run { self.phase = .onboarding }
+        } else if self.phase == .accountDeleted {
+            return
         } else if self.currentUser == nil {
             await MainActor.run { self.phase = .authentication }
         } else {

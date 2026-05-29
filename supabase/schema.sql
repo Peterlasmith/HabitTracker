@@ -102,3 +102,161 @@ create policy "Users can update own completions"
               and habits.user_id = auth.uid()
         )
     );
+
+create table if not exists public.assistant_clients (
+    id uuid primary key default gen_random_uuid(),
+    client_identifier text not null unique,
+    client_secret_hash text not null,
+    name text not null check (char_length(trim(name)) > 0),
+    redirect_uris text[] not null check (coalesce(array_length(redirect_uris, 1), 0) > 0),
+    allowed_scopes text[] not null default array['habits.read'],
+    created_at timestamptz not null default timezone('utc', now()),
+    updated_at timestamptz not null default timezone('utc', now()),
+    revoked_at timestamptz
+);
+
+create table if not exists public.assistant_authorization_codes (
+    id uuid primary key default gen_random_uuid(),
+    code_hash text not null unique,
+    client_id uuid not null references public.assistant_clients (id) on delete cascade,
+    user_id uuid not null references auth.users (id) on delete cascade,
+    redirect_uri text not null,
+    scope text[] not null,
+    code_challenge text,
+    code_challenge_method text check (code_challenge_method in ('plain', 'S256')),
+    created_at timestamptz not null default timezone('utc', now()),
+    expires_at timestamptz not null,
+    consumed_at timestamptz,
+    revoked_at timestamptz
+);
+
+create table if not exists public.assistant_access_tokens (
+    id uuid primary key default gen_random_uuid(),
+    token_hash text not null unique,
+    client_id uuid not null references public.assistant_clients (id) on delete cascade,
+    user_id uuid not null references auth.users (id) on delete cascade,
+    scope text[] not null,
+    created_at timestamptz not null default timezone('utc', now()),
+    expires_at timestamptz not null,
+    last_used_at timestamptz,
+    revoked_at timestamptz
+);
+
+create index if not exists assistant_clients_client_identifier_idx
+    on public.assistant_clients (client_identifier)
+    where revoked_at is null;
+
+create index if not exists assistant_authorization_codes_client_user_idx
+    on public.assistant_authorization_codes (client_id, user_id, expires_at);
+
+create index if not exists assistant_access_tokens_client_user_idx
+    on public.assistant_access_tokens (client_id, user_id, expires_at);
+
+alter table public.assistant_clients enable row level security;
+alter table public.assistant_authorization_codes enable row level security;
+alter table public.assistant_access_tokens enable row level security;
+
+drop policy if exists "No direct assistant client access" on public.assistant_clients;
+create policy "No direct assistant client access"
+    on public.assistant_clients
+    for all
+    to authenticated
+    using (false)
+    with check (false);
+
+drop policy if exists "No direct assistant authorization code access" on public.assistant_authorization_codes;
+create policy "No direct assistant authorization code access"
+    on public.assistant_authorization_codes
+    for all
+    to authenticated
+    using (false)
+    with check (false);
+
+drop policy if exists "No direct assistant token access" on public.assistant_access_tokens;
+create policy "No direct assistant token access"
+    on public.assistant_access_tokens
+    for all
+    to authenticated
+    using (false)
+    with check (false);
+
+create or replace function public.create_assistant_client(
+    p_name text,
+    p_redirect_uris text[],
+    p_allowed_scopes text[] default array['habits.read']
+)
+returns table (
+    client_identifier text,
+    client_secret text,
+    allowed_scopes text[]
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    v_client_identifier text := encode(gen_random_bytes(18), 'hex');
+    v_client_secret text := encode(gen_random_bytes(32), 'hex');
+begin
+    if coalesce(array_length(p_redirect_uris, 1), 0) = 0 then
+        raise exception 'At least one redirect URI is required.';
+    end if;
+
+    insert into public.assistant_clients (
+        client_identifier,
+        client_secret_hash,
+        name,
+        redirect_uris,
+        allowed_scopes
+    )
+    values (
+        v_client_identifier,
+        encode(digest(v_client_secret, 'sha256'), 'hex'),
+        trim(p_name),
+        p_redirect_uris,
+        coalesce(p_allowed_scopes, array['habits.read'])
+    );
+
+    return query
+    select
+        v_client_identifier,
+        v_client_secret,
+        coalesce(p_allowed_scopes, array['habits.read']);
+end;
+$$;
+
+create or replace function public.rotate_assistant_client_secret(
+    p_client_identifier text
+)
+returns table (
+    client_identifier text,
+    client_secret text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    v_client_secret text := encode(gen_random_bytes(32), 'hex');
+begin
+    update public.assistant_clients
+    set
+        client_secret_hash = encode(digest(v_client_secret, 'sha256'), 'hex'),
+        updated_at = timezone('utc', now())
+    where assistant_clients.client_identifier = p_client_identifier
+      and assistant_clients.revoked_at is null;
+
+    if not found then
+        raise exception 'Assistant client not found.';
+    end if;
+
+    return query
+    select p_client_identifier, v_client_secret;
+end;
+$$;
+
+revoke all on function public.create_assistant_client(text, text[], text[]) from public, anon, authenticated;
+grant execute on function public.create_assistant_client(text, text[], text[]) to service_role;
+
+revoke all on function public.rotate_assistant_client_secret(text) from public, anon, authenticated;
+grant execute on function public.rotate_assistant_client_secret(text) to service_role;

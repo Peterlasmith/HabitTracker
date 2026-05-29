@@ -213,6 +213,11 @@ actor LocalStore {
         try await write(completions, fileName: "completions.json")
     }
 
+    func clearAll() async throws {
+        guard fileManager.fileExists(atPath: baseURL.path()) else { return }
+        try fileManager.removeItem(at: baseURL)
+    }
+
     private func write<T: Encodable>(_ value: T, fileName: String) async throws {
         try ensureBaseDirectory()
         let url = baseURL.appending(path: fileName)

@@ -120,6 +120,12 @@ struct WidgetSyncService {
         defaults.set(data, forKey: Self.summaryKey)
         WidgetCenter.shared.reloadAllTimelines()
     }
+
+    func clearPublishedData() {
+        guard let defaults = UserDefaults(suiteName: Self.appGroup) else { return }
+        defaults.removeObject(forKey: Self.summaryKey)
+        WidgetCenter.shared.reloadAllTimelines()
+    }
 }
 
 struct AnalyticsService {

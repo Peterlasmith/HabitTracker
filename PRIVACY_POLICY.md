@@ -12,6 +12,7 @@ We may collect the following information when you use HabitClaw:
 - Habit and app content you choose to create, such as habit names, icons or emoji, colors, schedules, targets, reminder times, completion history, and notes.
 - Device-stored data used to operate the app, such as locally cached habit and completion data and widget summary data stored in shared app storage on your device.
 - Notification preferences and reminder settings if you enable reminders.
+- If you choose to connect a third-party assistant client, consent and connection metadata used to authorize that client for read access to your habit data.
 
 ## How We Use Information
 
@@ -21,6 +22,7 @@ We use information to:
 - Save, sync, and display your habits and progress.
 - Send local reminder notifications that you choose to enable.
 - Support core app features, including widgets and on-device caching.
+- Allow approved assistant integrations to read your habit data using the scopes you explicitly grant.
 - Maintain, troubleshoot, and improve the app.
 
 ## Where Information Is Stored
@@ -39,6 +41,8 @@ We may share information with service providers that help us operate HabitClaw, 
 
 - Supabase, for authentication and cloud data storage/syncing.
 - Apple, to deliver the app and support iOS features such as notifications and widgets.
+
+If you connect a third-party assistant client, HabitClaw may share the habit data covered by the scope you approve with that client.
 
 We may also disclose information if required by law or if necessary to protect rights, safety, or the integrity of the app.
 
@@ -74,4 +78,3 @@ If you have questions about this Privacy Policy or want to make a privacy reques
 [YOUR LEGAL NAME OR COMPANY NAME]  
 [YOUR CONTACT EMAIL]  
 [YOUR MAILING ADDRESS, IF APPLICABLE]
-

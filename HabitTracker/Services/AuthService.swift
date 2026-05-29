@@ -7,6 +7,7 @@ protocol AuthService: AnyObject {
     func restoreSession() async throws -> AppUser?
     func signIn(email: String, password: String) async throws -> AppUser
     func signUp(email: String, password: String) async throws -> AppUser
+    func deleteAccount(currentPassword: String) async throws
     func signOut() async throws
     func authorizationHeader() -> String?
 }
@@ -106,6 +107,44 @@ final class SupabaseAuthService: ObservableObject, AuthService {
     }
 
     func signOut() async throws {
+        currentUser = nil
+        try sessionStore.clear()
+    }
+
+    func deleteAccount(currentPassword: String) async throws {
+        guard let user = currentUser else {
+            throw AppError.network("Sign in again before deleting your account.")
+        }
+
+        let trimmedPassword = currentPassword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPassword.isEmpty else {
+            throw AppError.network("Enter your password to confirm account deletion.")
+        }
+
+        _ = try await authenticate(path: "auth/v1/token", queryItems: [
+            URLQueryItem(name: "grant_type", value: "password")
+        ], body: [
+            "email": user.email,
+            "password": trimmedPassword
+        ])
+
+        guard let authHeader = authorizationHeader() else {
+            throw AppError.network("Your session expired. Sign in again to delete your account.")
+        }
+
+        var request = URLRequest(url: endpointURL(path: "functions/v1/delete-account", queryItems: []))
+        request.httpMethod = "POST"
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "current_password": trimmedPassword
+        ])
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(configuration.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue(authHeader, forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await urlSession.data(for: request)
+        try validate(response: response, data: data)
+
         currentUser = nil
         try sessionStore.clear()
     }

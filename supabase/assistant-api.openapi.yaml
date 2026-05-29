@@ -1,0 +1,265 @@
+openapi: 3.1.0
+info:
+  title: HabitClaw Assistant API
+  version: 1.0.0
+  summary: Read-only assistant-facing API for OpenClaw and compatible clients.
+servers:
+  - url: https://{project-ref}.supabase.co/functions/v1
+    variables:
+      project-ref:
+        default: your-project
+components:
+  securitySchemes:
+    assistantBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+  schemas:
+    Habit:
+      type: object
+      required:
+        - id
+        - name
+        - emoji
+        - color
+        - status
+        - schedule
+        - target
+        - reminder
+        - derived
+        - recent_completions
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        emoji:
+          type: string
+        color:
+          type: string
+        status:
+          type: string
+          enum: [active, archived]
+        created_at:
+          type: string
+          format: date-time
+        archived_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        schedule:
+          type: object
+          properties:
+            type:
+              type: string
+              enum: [daily, weekdays]
+            weekdays:
+              type: array
+              items:
+                type: string
+        target:
+          type: object
+          properties:
+            type:
+              type: string
+              enum: [binary, count]
+            count:
+              type: integer
+        reminder:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+            hour:
+              type:
+                - integer
+                - "null"
+            minute:
+              type:
+                - integer
+                - "null"
+        derived:
+          type: object
+          properties:
+            due_today:
+              type: boolean
+            due_this_week:
+              type: integer
+            current_streak:
+              type: integer
+            adherence_last_7_days:
+              type: object
+            last_completed_at:
+              type:
+                - string
+                - "null"
+              format: date-time
+        recent_completions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Completion"
+    Completion:
+      type: object
+      required:
+        - id
+        - habit_id
+        - date
+        - count
+        - note
+        - created_at
+        - is_complete
+      properties:
+        id:
+          type: string
+          format: uuid
+        habit_id:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date-time
+        count:
+          type: integer
+        note:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        is_complete:
+          type: boolean
+paths:
+  /assistant-authorize/authorize:
+    post:
+      summary: Create an authorization code after a signed-in user approves access.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [client_id, redirect_uri]
+              properties:
+                client_id:
+                  type: string
+                redirect_uri:
+                  type: string
+                  format: uri
+                scope:
+                  oneOf:
+                    - type: string
+                    - type: array
+                      items:
+                        type: string
+                state:
+                  type: string
+                code_challenge:
+                  type: string
+                code_challenge_method:
+                  type: string
+                  enum: [plain, S256]
+      responses:
+        "200":
+          description: Authorization code created.
+  /assistant-authorize/token:
+    post:
+      summary: Exchange an authorization code for a read-only assistant access token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [grant_type, client_id, client_secret, redirect_uri, code]
+              properties:
+                grant_type:
+                  type: string
+                  enum: [authorization_code]
+                client_id:
+                  type: string
+                client_secret:
+                  type: string
+                redirect_uri:
+                  type: string
+                code:
+                  type: string
+                code_verifier:
+                  type: string
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: Access token minted.
+  /assistant-api/me:
+    get:
+      security:
+        - assistantBearer: []
+      summary: Fetch the current HabitClaw user profile summary for the assistant token.
+      responses:
+        "200":
+          description: User summary.
+  /assistant-api/habits:
+    get:
+      security:
+        - assistantBearer: []
+      summary: List habits with planning-friendly derived fields.
+      parameters:
+        - name: include_archived
+          in: query
+          schema:
+            type: boolean
+        - name: history_days
+          in: query
+          schema:
+            type: integer
+            default: 14
+        - name: timezone
+          in: query
+          schema:
+            type: string
+            default: UTC
+      responses:
+        "200":
+          description: Habit list.
+  /assistant-api/habits/{habitId}:
+    get:
+      security:
+        - assistantBearer: []
+      summary: Fetch one habit with recent completion history.
+      parameters:
+        - name: habitId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Habit detail.
+  /assistant-api/completions:
+    get:
+      security:
+        - assistantBearer: []
+      summary: List completions for the authorized HabitClaw user.
+      parameters:
+        - name: habit_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Completion list.
