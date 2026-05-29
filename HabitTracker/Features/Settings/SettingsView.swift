@@ -35,6 +35,7 @@ struct SettingsView: View {
                     .font(AppTheme.sans(size: 16, weight: .semibold))
                     .foregroundStyle(AppTheme.error)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .disabled(environment.isBusy)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .appCard()

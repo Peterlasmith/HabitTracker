@@ -101,10 +101,13 @@ final class HabitTrackerTests: XCTestCase {
         try await repository.saveHabit(habit)
 
         let savedHabits = try await repository.fetchHabits()
-        XCTAssertEqual(savedHabits, [habit])
+        XCTAssertEqual(savedHabits.count, 1)
+        XCTAssertEqual(savedHabits.first?.id, habit.id)
+        XCTAssertEqual(savedHabits.first?.name, habit.name)
+        XCTAssertNil(savedHabits.first?.archivedAt)
     }
 
-    func testSavingHabitPersistsLocallyWithoutWaitingForRemoteUpsert() async throws {
+    func testSavingHabitWaitsForRemoteUpsertBeforeCompleting() async throws {
         let baseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let localStore = LocalStore(baseURL: baseURL)
         let remote = BlockingRemoteDataSource()
@@ -130,14 +133,29 @@ final class HabitTrackerTests: XCTestCase {
             archivedAt: .now
         )
 
-        try await repository.saveHabit(habit)
-
-        let savedHabits = try await repository.fetchHabits()
-        XCTAssertEqual(savedHabits, [habit])
+        let completionTracker = TaskCompletionTracker()
+        let saveTask = Task {
+            try await repository.saveHabit(habit)
+            await completionTracker.markFinished()
+        }
 
         let remoteCallStarted = await remote.waitForUpsertToStart()
         XCTAssertTrue(remoteCallStarted)
+
+        let savedHabits = try await repository.fetchHabits()
+        XCTAssertEqual(savedHabits.count, 1)
+        XCTAssertEqual(savedHabits.first?.id, habit.id)
+        XCTAssertEqual(savedHabits.first?.name, habit.name)
+        XCTAssertNotNil(savedHabits.first?.archivedAt)
+
+        try? await Task.sleep(for: .milliseconds(50))
+        let saveFinishedBeforeUnblock = await completionTracker.isFinished()
+        XCTAssertFalse(saveFinishedBeforeUnblock)
+
         await remote.finishUpserts()
+        try await saveTask.value
+        let saveFinishedAfterUnblock = await completionTracker.isFinished()
+        XCTAssertTrue(saveFinishedAfterUnblock)
     }
 
     func testSyncKeepsLocalHabitWhenRemoteDoesNotReturnIt() async throws {
@@ -169,9 +187,15 @@ final class HabitTrackerTests: XCTestCase {
         try await repository.saveHabit(localOnlyHabit)
         let syncedHabits = try await repository.sync()
 
-        XCTAssertEqual(syncedHabits, [localOnlyHabit])
+        XCTAssertEqual(syncedHabits.count, 1)
+        XCTAssertEqual(syncedHabits.first?.id, localOnlyHabit.id)
+        XCTAssertEqual(syncedHabits.first?.name, localOnlyHabit.name)
+        XCTAssertNil(syncedHabits.first?.archivedAt)
         let savedHabits = try await repository.fetchHabits()
-        XCTAssertEqual(savedHabits, [localOnlyHabit])
+        XCTAssertEqual(savedHabits.count, 1)
+        XCTAssertEqual(savedHabits.first?.id, localOnlyHabit.id)
+        XCTAssertEqual(savedHabits.first?.name, localOnlyHabit.name)
+        XCTAssertNil(savedHabits.first?.archivedAt)
     }
 
     func testArchivingOneHabitDoesNotArchiveOthersWithMatchingCreationTime() async throws {
@@ -271,6 +295,55 @@ final class HabitTrackerTests: XCTestCase {
         XCTAssertEqual(savedHabits.count, 2)
         XCTAssertNotNil(savedHabits.first(where: { $0.id == firstHabit.id })?.archivedAt)
         XCTAssertNil(savedHabits.first(where: { $0.id == secondHabit.id })?.archivedAt)
+    }
+
+    func testArchivingHabitWaitsForRemoteUpsertBeforeCompleting() async throws {
+        let baseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let localStore = LocalStore(baseURL: baseURL)
+        let remote = BlockingRemoteDataSource()
+        let repository = await MainActor.run {
+            DefaultHabitRepository(
+                localStore: localStore,
+                remote: remote,
+                authService: MockAuthService()
+            )
+        }
+
+        let habit = Habit(
+            id: UUID(),
+            userId: UUID(),
+            name: "Meditate",
+            emojiOrIcon: "🧘",
+            color: .rose,
+            schedule: .daily,
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: .now,
+            archivedAt: nil
+        )
+        try await localStore.writeHabits([habit])
+
+        let completionTracker = TaskCompletionTracker()
+        let archiveTask = Task {
+            try await repository.archiveHabit(habit)
+            await completionTracker.markFinished()
+        }
+
+        let remoteCallStarted = await remote.waitForUpsertToStart()
+        XCTAssertTrue(remoteCallStarted)
+
+        let savedHabits = try await repository.fetchHabits()
+        XCTAssertNotNil(savedHabits.first?.archivedAt)
+
+        try? await Task.sleep(for: .milliseconds(50))
+        let archiveFinishedBeforeUnblock = await completionTracker.isFinished()
+        XCTAssertFalse(archiveFinishedBeforeUnblock)
+
+        await remote.finishUpserts()
+        try await archiveTask.value
+        let archiveFinishedAfterUnblock = await completionTracker.isFinished()
+        XCTAssertTrue(archiveFinishedAfterUnblock)
     }
 
     func testSavingUpdatedHabitDoesNotChangeOthersWithMatchingCreationTime() async throws {
@@ -738,6 +811,18 @@ private actor DuplicateCompletionRemoteDataSource: HabitRemoteDataSource {
     func upsertHabit(_ habit: Habit, authHeader: String?) async throws {}
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] { completions }
     func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws {}
+}
+
+private actor TaskCompletionTracker {
+    private var finished = false
+
+    func markFinished() {
+        finished = true
+    }
+
+    func isFinished() -> Bool {
+        finished
+    }
 }
 
 private actor StubHabitRepository: HabitRepository {
