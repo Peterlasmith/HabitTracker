@@ -145,6 +145,13 @@ final class AppEnvironment: ObservableObject {
         let updatedHabits = self.upsertHabit(habit, in: previousHabits)
 
         self.habits = updatedHabits
+        do {
+            try await self.localStore.writeHabits(updatedHabits)
+        } catch {
+            self.habits = previousHabits
+            self.errorMessage = error.localizedDescription
+            return false
+        }
 
         let habitCopy = habit
         let updatedHabitsCopy = updatedHabits
@@ -177,6 +184,13 @@ final class AppEnvironment: ObservableObject {
         let updatedHabits = self.upsertHabit(archivedHabit, in: previousHabits)
 
         self.habits = updatedHabits
+        do {
+            try await self.localStore.writeHabits(updatedHabits)
+        } catch {
+            self.habits = previousHabits
+            self.errorMessage = error.localizedDescription
+            return
+        }
 
         let updatedHabitsCopy = updatedHabits
         let archivedHabitCopy = archivedHabit
@@ -196,6 +210,13 @@ final class AppEnvironment: ObservableObject {
         let updatedHabits = self.upsertHabit(restoredHabit, in: previousHabits)
 
         self.habits = updatedHabits
+        do {
+            try await self.localStore.writeHabits(updatedHabits)
+        } catch {
+            self.habits = previousHabits
+            self.errorMessage = error.localizedDescription
+            return
+        }
 
         let updatedHabitsCopy = updatedHabits
         let restoredHabitCopy = restoredHabit
@@ -228,6 +249,14 @@ final class AppEnvironment: ObservableObject {
 
         self.completions = optimisticCompletions
         self.widgetSyncService.publish(habits: self.habits, completions: optimisticCompletions)
+        do {
+            try await self.localStore.writeCompletions(optimisticCompletions)
+        } catch {
+            self.completions = previousCompletions
+            self.widgetSyncService.publish(habits: self.habits, completions: previousCompletions)
+            self.errorMessage = error.localizedDescription
+            return
+        }
 
         await self.runBusyTask {
             try await self.checkInRepository.recordCompletion(completion)
