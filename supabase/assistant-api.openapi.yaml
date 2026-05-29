@@ -67,6 +67,9 @@ components:
               enum: [binary, count]
             count:
               type: integer
+            period:
+              type: string
+              enum: [day, week]
         reminder:
           type: object
           properties:

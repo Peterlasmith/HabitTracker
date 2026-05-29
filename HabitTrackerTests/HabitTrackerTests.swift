@@ -33,6 +33,68 @@ final class HabitTrackerTests: XCTestCase {
         XCTAssertEqual(StreakCalculator.currentStreak(for: habit, completions: completions, referenceDate: today), 2)
     }
 
+    func testWeeklyCountHabitStreakAdvancesByCompletedWeeks() {
+        let habit = Habit(
+            id: UUID(),
+            userId: UUID(),
+            name: "Workout",
+            emojiOrIcon: "🏃",
+            color: .rose,
+            schedule: .weekdays([.monday, .wednesday, .friday]),
+            targetType: .count,
+            targetCount: 2,
+            targetPeriod: .week,
+            reminderTime: nil,
+            createdAt: .now,
+            archivedAt: nil
+        )
+
+        let calendar = Calendar.current
+        let referenceDate = calendar.startOfDay(for: ISO8601DateFormatter().date(from: "2026-05-27T12:00:00Z")!)
+        let currentWeekMonday = calendar.startOfWeek(containing: referenceDate)
+        let previousWeekMonday = calendar.date(byAdding: .day, value: -7, to: currentWeekMonday)!
+
+        let completions = [
+            HabitCompletion(id: UUID(), habitId: habit.id, userId: habit.userId, date: currentWeekMonday, count: 1, note: "", createdAt: .now),
+            HabitCompletion(id: UUID(), habitId: habit.id, userId: habit.userId, date: calendar.date(byAdding: .day, value: 2, to: currentWeekMonday)!, count: 1, note: "", createdAt: .now),
+            HabitCompletion(id: UUID(), habitId: habit.id, userId: habit.userId, date: previousWeekMonday, count: 1, note: "", createdAt: .now),
+            HabitCompletion(id: UUID(), habitId: habit.id, userId: habit.userId, date: calendar.date(byAdding: .day, value: 4, to: previousWeekMonday)!, count: 1, note: "", createdAt: .now)
+        ]
+
+        XCTAssertEqual(StreakCalculator.currentStreak(for: habit, completions: completions, referenceDate: referenceDate), 2)
+    }
+
+    func testWeeklyCountHabitProgressSumsMultipleDaysInWeek() {
+        let habit = Habit(
+            id: UUID(),
+            userId: UUID(),
+            name: "Workout",
+            emojiOrIcon: "🏃",
+            color: .rose,
+            schedule: .weekdays([.monday, .wednesday, .friday]),
+            targetType: .count,
+            targetCount: 3,
+            targetPeriod: .week,
+            reminderTime: nil,
+            createdAt: .now,
+            archivedAt: nil
+        )
+
+        let calendar = Calendar.current
+        let referenceDate = calendar.startOfDay(for: ISO8601DateFormatter().date(from: "2026-05-28T12:00:00Z")!)
+        let weekStart = calendar.startOfWeek(containing: referenceDate)
+        let completions = [
+            HabitCompletion(id: UUID(), habitId: habit.id, userId: habit.userId, date: weekStart, count: 2, note: "", createdAt: .now),
+            HabitCompletion(id: UUID(), habitId: habit.id, userId: habit.userId, date: calendar.date(byAdding: .day, value: 2, to: weekStart)!, count: 1, note: "", createdAt: .now),
+            HabitCompletion(id: UUID(), habitId: habit.id, userId: habit.userId, date: calendar.date(byAdding: .day, value: 1, to: weekStart)!, count: 2, note: "", createdAt: .now)
+        ]
+
+        let progress = habit.periodProgress(referenceDate: referenceDate, completions: completions, calendar: calendar)
+
+        XCTAssertEqual(progress.completedCount, 3)
+        XCTAssertTrue(progress.isComplete)
+    }
+
     func testWeekdayHabitOnlyAppearsOnConfiguredDays() {
         let habit = Habit(
             id: UUID(),

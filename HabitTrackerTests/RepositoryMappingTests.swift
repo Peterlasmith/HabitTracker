@@ -19,6 +19,7 @@ final class RepositoryMappingTests: XCTestCase {
 
         let row = HabitRow(habit: habit)
         XCTAssertEqual(row.habit.schedule, habit.schedule)
+        XCTAssertEqual(row.habit.targetPeriod, .week)
         XCTAssertEqual(row.habit.reminderTime?.hour, 7)
         XCTAssertEqual(row.habit.reminderTime?.minute, 15)
     }
@@ -46,8 +47,10 @@ final class RepositoryMappingTests: XCTestCase {
         XCTAssertTrue(encodedRow.keys.contains("archived_at"))
         XCTAssertTrue(encodedRow.keys.contains("reminder_hour"))
         XCTAssertTrue(encodedRow.keys.contains("reminder_minute"))
+        XCTAssertTrue(encodedRow.keys.contains("target_period"))
         XCTAssertTrue(encodedRow["archived_at"] is NSNull)
         XCTAssertTrue(encodedRow["reminder_hour"] is NSNull)
         XCTAssertTrue(encodedRow["reminder_minute"] is NSNull)
+        XCTAssertEqual(encodedRow["target_period"] as? String, "day")
     }
 }

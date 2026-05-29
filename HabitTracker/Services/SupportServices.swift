@@ -87,20 +87,20 @@ struct WidgetSyncService {
 
         let dueHabits = habits.filter { $0.isDue(on: date, calendar: calendar) }
         let summaries = dueHabits.map { habit -> WidgetHabitSummary in
-            let completion = completions
-                .filter { $0.habitId == habit.id && calendar.isDate($0.date, inSameDayAs: today) }
-                .max { lhs, rhs in
+            let habitCompletions = completions
+                .filter { $0.habitId == habit.id }
+                .sorted { lhs, rhs in
                     if lhs.createdAt == rhs.createdAt {
-                        return lhs.id.uuidString < rhs.id.uuidString
+                        return lhs.id.uuidString > rhs.id.uuidString
                     }
-                    return lhs.createdAt < rhs.createdAt
+                    return lhs.createdAt > rhs.createdAt
                 }
             return WidgetHabitSummary(
                 id: habit.id,
                 name: habit.name,
                 emojiOrIcon: habit.emojiOrIcon,
                 colorName: habit.color.rawValue,
-                isComplete: completion?.isCompleted(for: habit) == true
+                isComplete: habit.isComplete(referenceDate: today, completions: habitCompletions, calendar: calendar)
             )
         }
 

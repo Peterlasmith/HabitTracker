@@ -222,7 +222,7 @@ struct TodayDashboardView: View {
                 Text("\(topStreak)")
                     .font(AppTheme.sans(size: 28, weight: .medium))
                     .foregroundStyle(AppTheme.textPrimary)
-                + Text(" days")
+                + Text(" streak")
                     .font(AppTheme.sans(size: 14, weight: .medium))
                     .foregroundStyle(AppTheme.textSecondary)
 
@@ -302,16 +302,26 @@ struct TodayDashboardView: View {
     }
 
     private func currentWeekSummary(for habits: [Habit]) -> TrackerWeekSummary {
-        let weekStart = calendar.startOfWeek(containing: today)
-        let weekDates = calendar.days(from: weekStart, through: min(calendar.endOfWeek(containing: today), today))
-
         var completed = 0
         var eligible = 0
 
         for habit in habits {
-            for date in weekDates where habit.isDue(on: date, calendar: calendar) {
+            let completions = habitCompletions(for: habit)
+            switch habit.targetType {
+            case .binary:
+                let weekStart = calendar.startOfWeek(containing: today)
+                let weekDates = calendar.days(from: weekStart, through: min(calendar.endOfWeek(containing: today), today))
+                for date in weekDates where habit.isDue(on: date, calendar: calendar) {
+                    eligible += 1
+                    if habit.isComplete(referenceDate: date, completions: completions, calendar: calendar) {
+                        completed += 1
+                    }
+                }
+            case .count:
+                let weekDates = calendar.days(from: calendar.startOfWeek(containing: today), through: calendar.endOfWeek(containing: today))
+                guard weekDates.contains(where: { habit.isDue(on: $0, calendar: calendar) }) else { continue }
                 eligible += 1
-                if completion(for: habit, on: date)?.isCompleted(for: habit) == true {
+                if habit.isComplete(referenceDate: today, completions: completions, calendar: calendar) {
                     completed += 1
                 }
             }
@@ -322,13 +332,15 @@ struct TodayDashboardView: View {
 
     private func todaySummary(for habits: [Habit]) -> String {
         let dueHabits = habits.filter { $0.isDue(on: today, calendar: calendar) }
-        let completed = dueHabits.filter { completion(for: $0, on: today)?.isCompleted(for: $0) == true }.count
+        let completed = dueHabits.filter {
+            $0.isComplete(referenceDate: today, completions: habitCompletions(for: $0), calendar: calendar)
+        }.count
 
         if dueHabits.isEmpty {
             return "Nothing is due today, but your trend view is still right here."
         }
 
-        return "\(completed) of \(dueHabits.count) habits complete today."
+        return "\(completed) of \(dueHabits.count) habits on track today."
     }
 
     private func completion(for habit: Habit, on date: Date) -> HabitCompletion? {
@@ -338,7 +350,7 @@ struct TodayDashboardView: View {
     private func currentStreak(for habit: Habit) -> Int {
         StreakCalculator.currentStreak(
             for: habit,
-            completions: environment.completionHistory(for: habit),
+            completions: habitCompletions(for: habit),
             referenceDate: today,
             calendar: calendar
         )
@@ -349,14 +361,18 @@ struct TodayDashboardView: View {
             for: habit,
             through: endDate,
             calendar: calendar,
-            completions: environment.completionHistory(for: habit)
+            completions: habitCompletions(for: habit)
         )
     }
 
     private func completionMap(for habit: Habit) -> [Date: HabitCompletion] {
-        Dictionary(uniqueKeysWithValues: environment.completionHistory(for: habit).map {
+        Dictionary(uniqueKeysWithValues: habitCompletions(for: habit).map {
             (calendar.startOfDay(for: $0.date), $0)
         })
+    }
+
+    private func habitCompletions(for habit: Habit) -> [HabitCompletion] {
+        environment.completionHistory(for: habit)
     }
 
     private func toggle(habit: Habit, on date: Date) async {
@@ -384,12 +400,17 @@ private struct WeekHabitCard: View {
     let onToggle: (Date) -> Void
 
     var body: some View {
+        let streakLabel = habit.targetType == .binary
+            ? (streak == 1 ? "day" : "days")
+            : (streak == 1 ? "week" : "weeks")
+        let weekProgress = habit.periodProgress(referenceDate: today, completions: Array(completionMap.values), calendar: calendar)
+
         VStack(alignment: .leading, spacing: 14) {
             HabitCardHeader(
                 habit: habit,
                 subtitle: habitScheduleLabel(habit.schedule),
                 trailingValue: streak == 0 ? nil : "\(streak)",
-                trailingLabel: streak == 1 ? "day" : "days"
+                trailingLabel: streakLabel
             )
 
             HStack(spacing: 4) {
@@ -397,22 +418,23 @@ private struct WeekHabitCard: View {
                     let completion = completion(on: date)
                     let isDue = habit.isDue(on: date, calendar: calendar)
                     let isFuture = date > today
-                    let isComplete = completion?.isCompleted(for: habit) == true
                     let count = completion?.count ?? 0
+                    let binaryComplete = habit.targetType == .binary && count > 0
+                    let isToday = calendar.isDate(date, inSameDayAs: today)
 
                     VStack(spacing: 5) {
                         Text(shortWeekdayLabel(for: date))
                             .font(AppTheme.sans(size: 10, weight: .semibold))
-                            .foregroundStyle(calendar.isDate(date, inSameDayAs: today) ? AppTheme.accent : AppTheme.textSecondary)
+                            .foregroundStyle(isToday ? AppTheme.accent : AppTheme.textSecondary)
 
                         Button {
                             onToggle(date)
                         } label: {
                             ZStack {
                                 Circle()
-                                    .fill(isComplete ? AppTheme.accent : .clear)
+                                    .fill(binaryComplete ? AppTheme.accent : .clear)
 
-                                if isComplete {
+                                if binaryComplete {
                                     Circle()
                                         .fill(.white)
                                         .frame(width: 10, height: 10)
@@ -426,14 +448,20 @@ private struct WeekHabitCard: View {
                             .contentShape(Circle())
                             .background(
                                 Circle()
-                                    .fill(calendar.isDate(date, inSameDayAs: today) && !isComplete ? AppTheme.accentSoft : .clear)
+                                    .fill(isToday && !binaryComplete ? AppTheme.accentSoft : .clear)
                                     .padding(-3)
                             )
                             .overlay(
                                 Circle()
                                     .stroke(
-                                        strokeColor(isDue: isDue, isFuture: isFuture, isComplete: isComplete, isToday: calendar.isDate(date, inSameDayAs: today)),
-                                        style: StrokeStyle(lineWidth: isComplete ? 0 : 1.5, dash: isFuture ? [4] : [])
+                                        strokeColor(
+                                            isDue: isDue,
+                                            isFuture: isFuture,
+                                            isComplete: binaryComplete,
+                                            isToday: isToday,
+                                            hasActivity: habit.targetType == .count && count > 0
+                                        ),
+                                        style: StrokeStyle(lineWidth: binaryComplete ? 0 : 1.5, dash: isFuture ? [4] : [])
                                     )
                             )
                         }
@@ -449,9 +477,17 @@ private struct WeekHabitCard: View {
             }
 
             if habit.targetType == .count {
-                Text("Goal: \(habit.targetCount) check-ins on each scheduled day.")
-                    .font(AppTheme.sans(size: 12))
-                    .foregroundStyle(AppTheme.textSecondary)
+                HStack {
+                    Text("This week: \(weekProgress.completedCount) / \(habit.targetCount)")
+                        .font(AppTheme.sans(size: 12, weight: .semibold))
+                        .foregroundStyle(weekProgress.isComplete ? AppTheme.success : AppTheme.textPrimary)
+
+                    Spacer()
+
+                    Text(weekProgress.isComplete ? "Week complete" : "Keep logging on scheduled days")
+                        .font(AppTheme.sans(size: 12))
+                        .foregroundStyle(AppTheme.textSecondary)
+                }
             }
         }
         .appCard()
@@ -472,16 +508,14 @@ private struct MonthHabitCard: View {
 
     var body: some View {
         let monthDates = dates.filter { calendar.isDate($0, equalTo: monthAnchor, toGranularity: .month) && $0 <= today }
-        let eligible = monthDates.filter { habit.isDue(on: $0, calendar: calendar) }.count
-        let completed = monthDates.filter { completion(on: $0)?.isCompleted(for: habit) == true }.count
-        let percentage = Int((Double(completed) / Double(max(eligible, 1)) * 100).rounded())
+        let summary = aggregateSummary(for: habit, dates: monthDates, today: today, calendar: calendar, completions: Array(completionMap.values))
 
         VStack(alignment: .leading, spacing: 14) {
             HabitCardHeader(
                 habit: habit,
                 subtitle: habitScheduleLabel(habit.schedule),
-                trailingValue: "\(completed)",
-                trailingLabel: "/ \(max(eligible, 1)) · \(percentage)%"
+                trailingValue: "\(summary.completed)",
+                trailingLabel: "/ \(max(summary.eligible, 1)) · \(summary.percentage)%"
             )
 
             HStack(spacing: 4) {
@@ -499,15 +533,15 @@ private struct MonthHabitCard: View {
                     let completion = completion(on: date)
                     let isDue = habit.isDue(on: date, calendar: calendar)
                     let isFuture = date > today
-                    let isComplete = completion?.isCompleted(for: habit) == true
                     let count = completion?.count ?? 0
+                    let binaryComplete = habit.targetType == .binary && count > 0
 
                     Group {
                         if isInMonth {
                             ZStack {
                                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                    .fill(isComplete ? AppTheme.accent : .clear)
-                                if isComplete {
+                                    .fill(binaryComplete ? AppTheme.accent : .clear)
+                                if binaryComplete {
                                     Text("\(calendar.component(.day, from: date))")
                                         .font(AppTheme.sans(size: 11, weight: .semibold))
                                         .foregroundStyle(.white)
@@ -525,12 +559,18 @@ private struct MonthHabitCard: View {
                             .overlay(
                                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                                     .stroke(
-                                        strokeColor(isDue: isDue, isFuture: isFuture, isComplete: isComplete, isToday: calendar.isDate(date, inSameDayAs: today)),
-                                        style: StrokeStyle(lineWidth: isComplete ? 0 : 1, dash: isFuture ? [4] : [])
+                                        strokeColor(
+                                            isDue: isDue,
+                                            isFuture: isFuture,
+                                            isComplete: binaryComplete,
+                                            isToday: calendar.isDate(date, inSameDayAs: today),
+                                            hasActivity: habit.targetType == .count && count > 0
+                                        ),
+                                        style: StrokeStyle(lineWidth: binaryComplete ? 0 : 1, dash: isFuture ? [4] : [])
                                     )
                             )
                             .overlay(alignment: .center) {
-                                if calendar.isDate(date, inSameDayAs: today) && !isComplete {
+                                if calendar.isDate(date, inSameDayAs: today) && !binaryComplete {
                                     RoundedRectangle(cornerRadius: 7, style: .continuous)
                                         .stroke(AppTheme.accent, lineWidth: 1)
                                         .padding(1)
@@ -563,16 +603,15 @@ private struct YearHabitCard: View {
 
     var body: some View {
         let inYearDates = dates.filter { calendar.isDate($0, equalTo: yearAnchor, toGranularity: .year) && $0 <= today }
-        let eligible = inYearDates.filter { habit.isDue(on: $0, calendar: calendar) }.count
-        let completed = inYearDates.filter { completion(on: $0)?.isCompleted(for: habit) == true }.count
-        let percentage = Int((Double(completed) / Double(max(eligible, 1)) * 100).rounded())
+        let summary = aggregateSummary(for: habit, dates: inYearDates, today: today, calendar: calendar, completions: Array(completionMap.values))
+        let streakUnit = habit.targetType == .binary ? "best" : "best weeks"
 
         VStack(alignment: .leading, spacing: 14) {
             HabitCardHeader(
                 habit: habit,
-                subtitle: "\(completed) / \(max(eligible, 1)) days · \(percentage)%",
+                subtitle: "\(summary.completed) / \(max(summary.eligible, 1)) \(summary.unitLabel) · \(summary.percentage)%",
                 trailingValue: "\(bestStreak)",
-                trailingLabel: "best"
+                trailingLabel: streakUnit
             )
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -580,7 +619,9 @@ private struct YearHabitCard: View {
                     ForEach(dates, id: \.self) { date in
                         let isInYear = calendar.isDate(date, equalTo: yearAnchor, toGranularity: .year)
                         let isFuture = date > today
-                        let isComplete = completion(on: date)?.isCompleted(for: habit) == true
+                        let isComplete = habit.targetType == .binary
+                            ? (completion(on: date)?.count ?? 0 > 0)
+                            : (completion(on: date)?.count ?? 0 > 0)
 
                         RoundedRectangle(cornerRadius: 2.5, style: .continuous)
                             .fill(isComplete ? AppTheme.accent : Color(red: 0.92, green: 0.89, blue: 0.84))
@@ -663,6 +704,16 @@ private struct TrackerWeekSummary {
     }
 }
 
+private struct HabitAggregateSummary {
+    let completed: Int
+    let eligible: Int
+    let unitLabel: String
+
+    var percentage: Int {
+        Int((Double(completed) / Double(max(eligible, 1)) * 100).rounded())
+    }
+}
+
 private struct TrackerPeriod {
     let scope: TrackerScope
     let anchor: Date
@@ -732,8 +783,11 @@ private struct TrackerPeriod {
     }
 }
 
-private func strokeColor(isDue: Bool, isFuture: Bool, isComplete: Bool, isToday: Bool) -> Color {
+private func strokeColor(isDue: Bool, isFuture: Bool, isComplete: Bool, isToday: Bool, hasActivity: Bool = false) -> Color {
     if isComplete {
+        return AppTheme.accent
+    }
+    if hasActivity {
         return AppTheme.accent
     }
     if isFuture {
@@ -746,6 +800,42 @@ private func strokeColor(isDue: Bool, isFuture: Bool, isComplete: Bool, isToday:
         return AppTheme.accent
     }
     return AppTheme.border
+}
+
+private func aggregateSummary(
+    for habit: Habit,
+    dates: [Date],
+    today: Date,
+    calendar: Calendar,
+    completions: [HabitCompletion]
+) -> HabitAggregateSummary {
+    switch habit.targetType {
+    case .binary:
+        let eligible = dates.filter { habit.isDue(on: $0, calendar: calendar) }.count
+        let completed = dates.filter {
+            habit.isComplete(referenceDate: $0, completions: completions, calendar: calendar)
+        }.count
+        return HabitAggregateSummary(completed: completed, eligible: eligible, unitLabel: "days")
+    case .count:
+        let eligibleWeeks = Set(
+            dates
+                .map { calendar.startOfWeek(containing: $0) }
+                .filter { weekStart in
+                    let weekDates = calendar.days(from: weekStart, through: min(calendar.endOfWeek(containing: weekStart), today))
+                    return weekDates.contains(where: { habit.isDue(on: $0, calendar: calendar) })
+                }
+        )
+
+        let completedWeeks = eligibleWeeks.filter { weekStart in
+            habit.isComplete(referenceDate: weekStart, completions: completions, calendar: calendar)
+        }
+
+        return HabitAggregateSummary(
+            completed: completedWeeks.count,
+            eligible: eligibleWeeks.count,
+            unitLabel: eligibleWeeks.count == 1 ? "week" : "weeks"
+        )
+    }
 }
 
 private func shortWeekdayLabel(for date: Date) -> String {
@@ -766,23 +856,50 @@ func habitScheduleLabel(_ schedule: HabitSchedule) -> String {
 }
 
 private func bestStreak(for habit: Habit, through endDate: Date, calendar: Calendar, completions: [HabitCompletion]) -> Int {
-    let completionLookup = Dictionary(uniqueKeysWithValues: completions.map { (calendar.startOfDay(for: $0.date), $0) })
-    let startDate = calendar.startOfYear(containing: endDate)
+    switch habit.effectiveTargetPeriod {
+    case .day:
+        let completionLookup = Dictionary(uniqueKeysWithValues: completions.map { (calendar.startOfDay(for: $0.date), $0) })
+        let startDate = calendar.startOfYear(containing: endDate)
 
-    var best = 0
-    var current = 0
+        var best = 0
+        var current = 0
 
-    for date in calendar.days(from: startDate, through: endDate) {
-        guard habit.isDue(on: date, calendar: calendar) else { continue }
-        if completionLookup[calendar.startOfDay(for: date)]?.isCompleted(for: habit) == true {
-            current += 1
-            best = max(best, current)
-        } else {
-            current = 0
+        for date in calendar.days(from: startDate, through: endDate) {
+            guard habit.isDue(on: date, calendar: calendar) else { continue }
+            if completionLookup[calendar.startOfDay(for: date)]?.count ?? 0 > 0 {
+                current += 1
+                best = max(best, current)
+            } else {
+                current = 0
+            }
         }
-    }
 
-    return best
+        return best
+    case .week:
+        let firstWeek = calendar.startOfWeek(containing: calendar.startOfYear(containing: endDate))
+        let lastWeek = calendar.startOfWeek(containing: endDate)
+
+        var best = 0
+        var current = 0
+        var cursor = firstWeek
+
+        while cursor <= lastWeek {
+            let weekDates = calendar.days(from: cursor, through: min(calendar.endOfWeek(containing: cursor), endDate))
+            if weekDates.contains(where: { habit.isDue(on: $0, calendar: calendar) }) {
+                if habit.isComplete(referenceDate: cursor, completions: completions, calendar: calendar) {
+                    current += 1
+                    best = max(best, current)
+                } else {
+                    current = 0
+                }
+            }
+
+            guard let nextWeek = calendar.date(byAdding: .day, value: 7, to: cursor) else { break }
+            cursor = nextWeek
+        }
+
+        return best
+    }
 }
 
 extension Calendar {

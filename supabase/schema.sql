@@ -10,6 +10,7 @@ create table if not exists public.habits (
     schedule_weekdays integer[] not null default '{}',
     target_type text not null check (target_type in ('binary', 'count')),
     target_count integer not null check (target_count >= 1),
+    target_period text not null default 'day' check (target_period in ('day', 'week')),
     reminder_hour integer check (reminder_hour between 0 and 23),
     reminder_minute integer check (reminder_minute between 0 and 59),
     created_at timestamptz not null default timezone('utc', now()),

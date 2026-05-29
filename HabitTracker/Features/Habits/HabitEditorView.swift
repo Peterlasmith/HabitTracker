@@ -69,7 +69,7 @@ struct HabitEditorView: View {
                     .fill(color.color)
                     .frame(width: 14, height: 14)
 
-                Text(targetType == .binary ? "Complete once per scheduled day" : "\(targetCount) check-ins per scheduled day")
+                Text(targetType == .binary ? "Complete once per scheduled day" : "\(targetCount) times per week")
                     .font(AppTheme.sans(size: 13))
                     .foregroundStyle(AppTheme.textSecondary)
             }
@@ -125,9 +125,13 @@ struct HabitEditorView: View {
                 .pickerStyle(.segmented)
 
                 if targetType == .count {
-                    Stepper("Target count: \(targetCount)", value: $targetCount, in: 1...20)
+                    Stepper("Weekly target: \(targetCount) times", value: $targetCount, in: 1...20)
                         .font(AppTheme.sans(size: 16, weight: .medium))
                         .foregroundStyle(AppTheme.textPrimary)
+
+                    Text("Each check-in on a scheduled day adds to this week's total.")
+                        .font(AppTheme.sans(size: 12))
+                        .foregroundStyle(AppTheme.textSecondary)
                 }
             }
         }
@@ -275,6 +279,7 @@ struct HabitEditorView: View {
             schedule: schedule,
             targetType: targetType,
             targetCount: targetType == .binary ? 1 : targetCount,
+            targetPeriod: targetType == .binary ? .day : .week,
             reminderTime: timeComponents,
             createdAt: existingHabit?.createdAt ?? .now,
             archivedAt: existingHabit?.archivedAt

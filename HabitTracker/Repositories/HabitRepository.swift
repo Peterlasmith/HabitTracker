@@ -355,6 +355,7 @@ struct HabitRow: Codable {
     let scheduleWeekdays: [Int]
     let targetType: String
     let targetCount: Int
+    let targetPeriod: String
     let reminderHour: Int?
     let reminderMinute: Int?
     let createdAt: Date
@@ -370,6 +371,7 @@ struct HabitRow: Codable {
         case scheduleWeekdays = "schedule_weekdays"
         case targetType = "target_type"
         case targetCount = "target_count"
+        case targetPeriod = "target_period"
         case reminderHour = "reminder_hour"
         case reminderMinute = "reminder_minute"
         case createdAt = "created_at"
@@ -392,6 +394,7 @@ struct HabitRow: Codable {
         }
         self.targetType = habit.targetType.rawValue
         self.targetCount = habit.targetCount
+        self.targetPeriod = habit.targetPeriod.rawValue
         self.reminderHour = habit.reminderTime?.hour
         self.reminderMinute = habit.reminderTime?.minute
         self.createdAt = habit.createdAt
@@ -409,6 +412,8 @@ struct HabitRow: Codable {
         scheduleWeekdays = try container.decode([Int].self, forKey: .scheduleWeekdays)
         targetType = try container.decode(String.self, forKey: .targetType)
         targetCount = try container.decode(Int.self, forKey: .targetCount)
+        targetPeriod = try container.decodeIfPresent(String.self, forKey: .targetPeriod)
+            ?? (targetType == HabitTargetType.count.rawValue ? HabitTargetPeriod.week.rawValue : HabitTargetPeriod.day.rawValue)
         reminderHour = try container.decodeIfPresent(Int.self, forKey: .reminderHour)
         reminderMinute = try container.decodeIfPresent(Int.self, forKey: .reminderMinute)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
@@ -426,6 +431,7 @@ struct HabitRow: Codable {
         try container.encode(scheduleWeekdays, forKey: .scheduleWeekdays)
         try container.encode(targetType, forKey: .targetType)
         try container.encode(targetCount, forKey: .targetCount)
+        try container.encode(targetPeriod, forKey: .targetPeriod)
         try container.encode(reminderHour, forKey: .reminderHour)
         try container.encode(reminderMinute, forKey: .reminderMinute)
         try container.encode(createdAt, forKey: .createdAt)
@@ -444,6 +450,7 @@ struct HabitRow: Codable {
                 : .weekdays(Set(scheduleWeekdays.compactMap(Weekday.init(rawValue:)))),
             targetType: HabitTargetType(rawValue: targetType) ?? .binary,
             targetCount: targetCount,
+            targetPeriod: HabitTargetPeriod(rawValue: targetPeriod),
             reminderTime: reminderHour == nil ? nil : DateComponents(hour: reminderHour, minute: reminderMinute ?? 0),
             createdAt: createdAt,
             archivedAt: archivedAt

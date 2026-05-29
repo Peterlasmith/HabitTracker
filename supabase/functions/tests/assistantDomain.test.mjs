@@ -20,6 +20,7 @@ const readingHabit = {
   schedule_weekdays: [2, 4, 6],
   target_type: "count",
   target_count: 2,
+  target_period: "week",
   reminder_hour: 8,
   reminder_minute: 30,
 };
@@ -29,7 +30,7 @@ const completions = [
     id: "completion-1",
     habit_id: "habit-1",
     date: "2026-05-27T00:00:00.000Z",
-    count: 2,
+    count: 1,
     note: "Morning session",
     created_at: "2026-05-27T01:00:00.000Z",
   },
@@ -37,7 +38,7 @@ const completions = [
     id: "completion-2",
     habit_id: "habit-1",
     date: "2026-05-25T00:00:00.000Z",
-    count: 2,
+    count: 1,
     note: "",
     created_at: "2026-05-25T01:00:00.000Z",
   },
@@ -63,7 +64,7 @@ test("currentStreak stops when a due day is incomplete", () => {
     new Date("2026-05-27T12:00:00.000Z")
   );
 
-  assert.equal(streak, 2);
+  assert.equal(streak, 1);
 });
 
 test("adherence counts only due days for the rolling window", () => {
@@ -76,8 +77,8 @@ test("adherence counts only due days for the rolling window", () => {
 
   assert.deepEqual(summary, {
     completed_days: 2,
-    due_days: 3,
-    ratio: 0.6667,
+    due_days: 2,
+    ratio: 1,
   });
 });
 
@@ -89,15 +90,22 @@ test("buildHabitResponse returns planning-friendly derived fields", () => {
 
   assert.equal(response.schedule.type, "weekdays");
   assert.deepEqual(response.schedule.weekdays, ["monday", "wednesday", "friday"]);
+  assert.equal(response.target.period, "week");
   assert.equal(response.reminder.enabled, true);
   assert.equal(response.derived.due_today, true);
-  assert.equal(response.derived.current_streak, 2);
+  assert.equal(response.derived.current_streak, 1);
   assert.equal(response.recent_completions.length, 3);
 });
 
 test("buildCompletionResponse derives completion status from habit targets", () => {
-  const complete = buildCompletionResponse(completions[0], readingHabit);
-  const incomplete = buildCompletionResponse(completions[2], readingHabit);
+  const complete = buildCompletionResponse(completions[0], readingHabit, completions, {
+    referenceDate: new Date("2026-05-27T12:00:00.000Z"),
+    timeZone: "UTC",
+  });
+  const incomplete = buildCompletionResponse(completions[2], readingHabit, completions, {
+    referenceDate: new Date("2026-05-22T12:00:00.000Z"),
+    timeZone: "UTC",
+  });
 
   assert.equal(complete.is_complete, true);
   assert.equal(incomplete.is_complete, false);
