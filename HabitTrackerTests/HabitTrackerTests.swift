@@ -104,6 +104,42 @@ final class HabitTrackerTests: XCTestCase {
         XCTAssertEqual(savedHabits, [habit])
     }
 
+    func testSavingHabitPersistsLocallyWithoutWaitingForRemoteUpsert() async throws {
+        let baseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let localStore = LocalStore(baseURL: baseURL)
+        let remote = BlockingRemoteDataSource()
+        let repository = await MainActor.run {
+            DefaultHabitRepository(
+                localStore: localStore,
+                remote: remote,
+                authService: MockAuthService()
+            )
+        }
+
+        let habit = Habit(
+            id: UUID(),
+            userId: UUID(),
+            name: "Journal",
+            emojiOrIcon: "📓",
+            color: .moss,
+            schedule: .daily,
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: .now,
+            archivedAt: .now
+        )
+
+        try await repository.saveHabit(habit)
+
+        let savedHabits = try await repository.fetchHabits()
+        XCTAssertEqual(savedHabits, [habit])
+
+        let remoteCallStarted = await remote.waitForUpsertToStart()
+        XCTAssertTrue(remoteCallStarted)
+        await remote.finishUpserts()
+    }
+
     func testSyncKeepsLocalHabitWhenRemoteDoesNotReturnIt() async throws {
         let baseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let localStore = LocalStore(baseURL: baseURL)
@@ -659,6 +695,38 @@ private actor EventuallyConsistentRemoteDataSource: HabitRemoteDataSource {
     func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws {}
 }
 
+private actor BlockingRemoteDataSource: HabitRemoteDataSource {
+    private var didStartUpsert = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func fetchHabits(authHeader: String?) async throws -> [Habit] { [] }
+
+    func upsertHabit(_ habit: Habit, authHeader: String?) async throws {
+        didStartUpsert = true
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] { [] }
+    func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws {}
+
+    func waitForUpsertToStart() async -> Bool {
+        for _ in 0..<50 {
+            if didStartUpsert {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return false
+    }
+
+    func finishUpserts() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
 private actor DuplicateCompletionRemoteDataSource: HabitRemoteDataSource {
     private var completions: [HabitCompletion] = []
 
@@ -728,6 +796,7 @@ private final class MockAuthService: AuthService {
     func restoreSession() async throws -> AppUser? { currentUser }
     func signIn(email: String, password: String) async throws -> AppUser { throw AppError.network("Unused") }
     func signUp(email: String, password: String) async throws -> AppUser { throw AppError.network("Unused") }
+    func deleteAccount(currentPassword: String) async throws {}
     func signOut() async throws {}
     func authorizationHeader() -> String? { nil }
 }

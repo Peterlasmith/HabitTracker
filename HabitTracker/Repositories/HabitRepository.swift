@@ -44,7 +44,9 @@ actor DefaultHabitRepository: HabitRepository {
         }
         try await localStore.writeHabits(habits)
         let authHeader = await MainActor.run { authService.authorizationHeader() }
-        try? await remote.upsertHabit(habit, authHeader: authHeader)
+        Task {
+            try? await remote.upsertHabit(habit, authHeader: authHeader)
+        }
     }
 
     func archiveHabit(_ habit: Habit) async throws {
@@ -101,7 +103,9 @@ actor DefaultCheckInRepository: CheckInRepository {
         completions = replaceCompletion(completion, in: completions)
         try await localStore.writeCompletions(completions)
         let authHeader = await MainActor.run { authService.authorizationHeader() }
-        try? await remote.upsertCompletion(completion, authHeader: authHeader)
+        Task {
+            try? await remote.upsertCompletion(completion, authHeader: authHeader)
+        }
     }
 
     func sync() async throws -> [HabitCompletion] {
