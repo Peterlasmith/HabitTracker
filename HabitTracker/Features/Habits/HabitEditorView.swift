@@ -143,19 +143,23 @@ struct HabitEditorView: View {
                 .pickerStyle(.segmented)
 
                 if !isDaily {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 48), spacing: 8)], spacing: 8) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 60, maximum: 84), spacing: 8)], spacing: 8) {
                         ForEach(Weekday.allCases) { day in
-                            Button(day.label) {
+                            Button {
                                 if selectedWeekdays.contains(day) {
                                     selectedWeekdays.remove(day)
                                 } else {
                                     selectedWeekdays.insert(day)
                                 }
+                            } label: {
+                                Text(day.label)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.85)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
                             }
                             .font(AppTheme.sans(size: 14, weight: .semibold))
                             .foregroundStyle(selectedWeekdays.contains(day) ? .white : AppTheme.textPrimary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
                             .background(selectedWeekdays.contains(day) ? AppTheme.accent : AppTheme.surface)
                             .clipShape(Capsule())
                             .overlay(

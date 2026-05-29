@@ -35,14 +35,6 @@ struct SettingsView: View {
                     .font(AppTheme.sans(size: 16, weight: .semibold))
                     .foregroundStyle(AppTheme.error)
                     .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Button("Delete Account", role: .destructive) {
-                        environment.errorMessage = nil
-                        showingDeleteAccountSheet = true
-                    }
-                    .font(AppTheme.sans(size: 16, weight: .semibold))
-                    .foregroundStyle(AppTheme.error)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .appCard()
@@ -100,6 +92,15 @@ struct SettingsView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .appCard(fill: AppTheme.surface)
+
+                Button("Delete Account", role: .destructive) {
+                    environment.errorMessage = nil
+                    showingDeleteAccountSheet = true
+                }
+                .font(AppTheme.sans(size: 13, weight: .semibold))
+                .foregroundStyle(AppTheme.error)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 8)
             }
             .padding(20)
             .padding(.bottom, 110)
