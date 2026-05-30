@@ -182,62 +182,38 @@ final class AppEnvironment: ObservableObject {
         }
     }
 
-    func archiveHabit(_ habit: Habit) async {
+    func deleteHabit(_ habit: Habit) async {
         let previousHabits = self.habits
-        var archivedHabit = habit
-        archivedHabit.archivedAt = .now
-        let updatedHabits = self.upsertHabit(archivedHabit, in: previousHabits)
+        let previousCompletions = self.completions
+        let updatedHabits = previousHabits.filter { $0.id != habit.id }
+        let updatedCompletions = previousCompletions.filter { $0.habitId != habit.id }
 
         self.habits = updatedHabits
+        self.completions = updatedCompletions
         do {
             try await self.localStore.writeHabits(updatedHabits)
+            try await self.localStore.writeCompletions(updatedCompletions)
         } catch {
             self.habits = previousHabits
+            self.completions = previousCompletions
+            try? await self.localStore.writeHabits(previousHabits)
+            try? await self.localStore.writeCompletions(previousCompletions)
             self.errorMessage = error.localizedDescription
             return
         }
 
         let updatedHabitsCopy = updatedHabits
-        let archivedHabitCopy = archivedHabit
-        let didArchive = await self.runBusyTask { [updatedHabitsCopy, archivedHabitCopy] in
-            try await self.habitRepository.archiveHabit(archivedHabitCopy)
+        let updatedCompletionsCopy = updatedCompletions
+        let habitCopy = habit
+        let didDelete = await self.runBusyTask { [updatedHabitsCopy, updatedCompletionsCopy, habitCopy] in
+            try await self.habitRepository.deleteHabit(habitCopy)
             try await self.reminderService.rescheduleNotifications(for: updatedHabitsCopy)
-            await self.widgetSyncService.publish(habits: updatedHabitsCopy, completions: self.completions)
+            await self.widgetSyncService.publish(habits: updatedHabitsCopy, completions: updatedCompletionsCopy)
             return true
         } ?? false
 
-        guard didArchive else {
-            await self.rollbackHabits(to: previousHabits)
-            return
-        }
-    }
-
-    func restoreHabit(_ habit: Habit) async {
-        let previousHabits = self.habits
-        var restoredHabit = habit
-        restoredHabit.archivedAt = nil
-        let updatedHabits = self.upsertHabit(restoredHabit, in: previousHabits)
-
-        self.habits = updatedHabits
-        do {
-            try await self.localStore.writeHabits(updatedHabits)
-        } catch {
-            self.habits = previousHabits
-            self.errorMessage = error.localizedDescription
-            return
-        }
-
-        let updatedHabitsCopy = updatedHabits
-        let restoredHabitCopy = restoredHabit
-        let didRestore = await self.runBusyTask { [restoredHabitCopy, updatedHabitsCopy] in
-            try await self.habitRepository.saveHabit(restoredHabitCopy)
-            try await self.reminderService.rescheduleNotifications(for: updatedHabitsCopy)
-            await self.widgetSyncService.publish(habits: updatedHabitsCopy, completions: self.completions)
-            return true
-        } ?? false
-
-        guard didRestore else {
-            await self.rollbackHabits(to: previousHabits)
+        guard didDelete else {
+            await self.rollbackState(habits: previousHabits, completions: previousCompletions)
             return
         }
     }
@@ -362,6 +338,15 @@ final class AppEnvironment: ObservableObject {
         self.completions = previousCompletions
         try? await self.localStore.writeCompletions(previousCompletions)
         self.widgetSyncService.publish(habits: self.habits, completions: previousCompletions)
+    }
+
+    private func rollbackState(habits previousHabits: [Habit], completions previousCompletions: [HabitCompletion]) async {
+        self.habits = previousHabits
+        self.completions = previousCompletions
+        try? await self.localStore.writeHabits(previousHabits)
+        try? await self.localStore.writeCompletions(previousCompletions)
+        try? await self.reminderService.rescheduleNotifications(for: previousHabits)
+        self.widgetSyncService.publish(habits: previousHabits, completions: previousCompletions)
     }
 
     private func determinePhase() async {

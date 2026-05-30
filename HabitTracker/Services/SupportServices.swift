@@ -32,7 +32,7 @@ struct DefaultReminderService: ReminderService {
         let identifiers = habits.flatMap(notificationIdentifiers(for:))
         center.removePendingNotificationRequests(withIdentifiers: identifiers)
 
-        for habit in habits where habit.reminderTime != nil && !habit.isArchived {
+        for habit in habits where habit.reminderTime != nil {
             let content = UNMutableNotificationContent()
             content.title = habit.name
             content.body = "Time to keep your streak alive."

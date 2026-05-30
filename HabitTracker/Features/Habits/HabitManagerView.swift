@@ -5,18 +5,10 @@ struct HabitManagerView: View {
     @EnvironmentObject private var environment: AppEnvironment
 
     @State private var selectedHabit: Habit?
-    @State private var habitPendingArchival: Habit?
+    @State private var habitPendingDeletion: Habit?
 
-    private var activeHabits: [Habit] {
-        environment.habits
-            .filter { !$0.isArchived }
-            .sorted { $0.createdAt < $1.createdAt }
-    }
-
-    private var archivedHabits: [Habit] {
-        environment.habits
-            .filter(\.isArchived)
-            .sorted { $0.createdAt < $1.createdAt }
+    private var habits: [Habit] {
+        environment.habits.sorted { $0.createdAt < $1.createdAt }
     }
 
     var body: some View {
@@ -27,12 +19,12 @@ struct HabitManagerView: View {
                         .font(AppTheme.serif(size: 32, weight: .semibold))
                         .foregroundStyle(AppTheme.textPrimary)
 
-                    Text("Edit names, schedules, or reminders, and archive habits you no longer want to track.")
+                    Text("Edit names, schedules, or reminders, and permanently delete habits you no longer want to track.")
                         .font(AppTheme.sans(size: 14))
                         .foregroundStyle(AppTheme.textSecondary)
                 }
 
-                if activeHabits.isEmpty {
+                if habits.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("No habits yet")
                             .font(AppTheme.serif(size: 22, weight: .semibold))
@@ -46,24 +38,8 @@ struct HabitManagerView: View {
                     .appCard()
                 } else {
                     VStack(spacing: 10) {
-                        ForEach(activeHabits) { habit in
+                        ForEach(habits) { habit in
                             habitRow(habit)
-                        }
-                    }
-                }
-
-                if !archivedHabits.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Archived")
-                            .font(AppTheme.sans(size: 11, weight: .semibold))
-                            .foregroundStyle(AppTheme.textSecondary)
-                            .textCase(.uppercase)
-                            .tracking(1.1)
-
-                        VStack(spacing: 10) {
-                            ForEach(archivedHabits) { habit in
-                                archivedHabitRow(habit)
-                            }
                         }
                     }
                 }
@@ -85,30 +61,30 @@ struct HabitManagerView: View {
             }
         }
         .confirmationDialog(
-            habitPendingArchival == nil ? "Archive habit" : "Archive \(habitPendingArchival?.name ?? "habit")?",
+            habitPendingDeletion == nil ? "Delete habit" : "Delete \(habitPendingDeletion?.name ?? "habit")?",
             isPresented: Binding(
-                get: { habitPendingArchival != nil },
+                get: { habitPendingDeletion != nil },
                 set: { isPresented in
                     if !isPresented {
-                        habitPendingArchival = nil
+                        habitPendingDeletion = nil
                     }
                 }
             ),
             titleVisibility: .visible
         ) {
-            Button("Archive Habit") {
-                guard let habit = habitPendingArchival else { return }
+            Button("Delete Habit", role: .destructive) {
+                guard let habit = habitPendingDeletion else { return }
                 Task {
-                    await environment.archiveHabit(habit)
-                    habitPendingArchival = nil
+                    await environment.deleteHabit(habit)
+                    habitPendingDeletion = nil
                 }
             }
 
             Button("Cancel", role: .cancel) {
-                habitPendingArchival = nil
+                habitPendingDeletion = nil
             }
         } message: {
-            Text("This removes the habit from your active lists and keeps its history in Archived.")
+            Text("This permanently deletes the habit and all of its history.")
         }
     }
 
@@ -135,40 +111,14 @@ struct HabitManagerView: View {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 10) {
                     editButton(for: habit)
-                    archiveButton(for: habit)
+                    deleteButton(for: habit)
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
                     editButton(for: habit)
-                    archiveButton(for: habit)
+                    deleteButton(for: habit)
                 }
             }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .appCard(fill: AppTheme.surfaceStrong, padding: 14, cornerRadius: 20)
-    }
-
-    private func archivedHabitRow(_ habit: Habit) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center, spacing: 14) {
-                Circle()
-                    .fill(habit.color.color.opacity(0.55))
-                    .frame(width: 14, height: 14)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("\(habit.emojiOrIcon) \(habit.name)")
-                        .font(AppTheme.serif(size: 20, weight: .semibold))
-                        .foregroundStyle(AppTheme.textPrimary)
-
-                    Text("Archived")
-                        .font(AppTheme.sans(size: 13))
-                        .foregroundStyle(AppTheme.textSecondary)
-                }
-
-                Spacer(minLength: 0)
-            }
-
-            restoreButton(for: habit)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .appCard(fill: AppTheme.surfaceStrong, padding: 14, cornerRadius: 20)
@@ -193,37 +143,16 @@ struct HabitManagerView: View {
         .buttonStyle(.plain)
     }
 
-    private func archiveButton(for habit: Habit) -> some View {
-        Button("Archive") {
-            habitPendingArchival = habit
+    private func deleteButton(for habit: Habit) -> some View {
+        Button("Delete", role: .destructive) {
+            habitPendingDeletion = habit
         }
         .font(AppTheme.sans(size: 13, weight: .semibold))
-        .foregroundStyle(AppTheme.textPrimary)
+        .foregroundStyle(AppTheme.error)
         .lineLimit(1)
         .fixedSize(horizontal: true, vertical: false)
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .buttonStyle(.plain)
-    }
-
-    private func restoreButton(for habit: Habit) -> some View {
-        Button("Restore") {
-            Task {
-                await environment.restoreHabit(habit)
-            }
-        }
-        .font(AppTheme.sans(size: 13, weight: .semibold))
-        .foregroundStyle(AppTheme.textPrimary)
-        .lineLimit(1)
-        .fixedSize(horizontal: true, vertical: false)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(AppTheme.surface)
-        .clipShape(Capsule())
-        .overlay(
-            Capsule()
-                .stroke(AppTheme.border, lineWidth: 1)
-        )
         .buttonStyle(.plain)
     }
 }

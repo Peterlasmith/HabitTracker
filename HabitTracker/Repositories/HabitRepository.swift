@@ -3,7 +3,7 @@ import Foundation
 protocol HabitRepository {
     func fetchHabits() async throws -> [Habit]
     func saveHabit(_ habit: Habit) async throws
-    func archiveHabit(_ habit: Habit) async throws
+    func deleteHabit(_ habit: Habit) async throws
     func sync() async throws -> [Habit]
 }
 
@@ -16,6 +16,7 @@ protocol CheckInRepository {
 protocol HabitRemoteDataSource: Sendable {
     func fetchHabits(authHeader: String?) async throws -> [Habit]
     func upsertHabit(_ habit: Habit, authHeader: String?) async throws
+    func deleteHabit(_ habit: Habit, authHeader: String?) async throws
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion]
     func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws
 }
@@ -48,10 +49,20 @@ actor DefaultHabitRepository: HabitRepository {
         }
     }
 
-    func archiveHabit(_ habit: Habit) async throws {
-        var archived = habit
-        archived.archivedAt = .now
-        try await saveHabit(archived)
+    func deleteHabit(_ habit: Habit) async throws {
+        let previousHabits = try await localStore.readHabits()
+        var updatedHabits = previousHabits
+        updatedHabits.removeAll { $0.id == habit.id }
+        try await localStore.writeHabits(updatedHabits)
+
+        do {
+            try await performAuthorizedRemoteRequest { [self] authHeader in
+                try await self.remote.deleteHabit(habit, authHeader: authHeader)
+            }
+        } catch {
+            try? await localStore.writeHabits(previousHabits)
+            throw error
+        }
     }
 
     func sync() async throws -> [Habit] {
@@ -318,6 +329,18 @@ struct SupabaseHabitRemoteDataSource {
         ) as [HabitRow]
     }
 
+    func deleteHabit(_ habit: Habit, authHeader: String?) async throws {
+        _ = try await performRequest(
+            path: "rest/v1/habits",
+            queryItems: [
+                URLQueryItem(name: "id", value: "eq.\(habit.id.uuidString.lowercased())"),
+                URLQueryItem(name: "user_id", value: "eq.\(habit.userId.uuidString.lowercased())"),
+            ],
+            method: "DELETE",
+            authHeader: authHeader
+        ) as [HabitRow]
+    }
+
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] {
         let rows: [HabitCompletionRow] = try await performRequest(path: "rest/v1/habit_completions", queryItems: [URLQueryItem(name: "select", value: "*")], method: "GET", authHeader: authHeader)
         return rows.map(\.completion)
@@ -419,7 +442,6 @@ struct HabitRow: Codable {
     let reminderHour: Int?
     let reminderMinute: Int?
     let createdAt: Date
-    let archivedAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -435,7 +457,6 @@ struct HabitRow: Codable {
         case reminderHour = "reminder_hour"
         case reminderMinute = "reminder_minute"
         case createdAt = "created_at"
-        case archivedAt = "archived_at"
     }
 
     init(habit: Habit) {
@@ -458,7 +479,6 @@ struct HabitRow: Codable {
         self.reminderHour = habit.reminderTime?.hour
         self.reminderMinute = habit.reminderTime?.minute
         self.createdAt = habit.createdAt
-        self.archivedAt = habit.archivedAt
     }
 
     init(from decoder: any Decoder) throws {
@@ -476,7 +496,6 @@ struct HabitRow: Codable {
         reminderHour = try container.decodeIfPresent(Int.self, forKey: .reminderHour)
         reminderMinute = try container.decodeIfPresent(Int.self, forKey: .reminderMinute)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
-        archivedAt = try container.decodeIfPresent(Date.self, forKey: .archivedAt)
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -494,7 +513,6 @@ struct HabitRow: Codable {
         try container.encode(reminderHour, forKey: .reminderHour)
         try container.encode(reminderMinute, forKey: .reminderMinute)
         try container.encode(createdAt, forKey: .createdAt)
-        try container.encode(archivedAt, forKey: .archivedAt)
     }
 
     var habit: Habit {
@@ -511,8 +529,7 @@ struct HabitRow: Codable {
             targetCount: 1,
             targetPeriod: .day,
             reminderTime: reminderHour == nil ? nil : DateComponents(hour: reminderHour, minute: reminderMinute ?? 0),
-            createdAt: createdAt,
-            archivedAt: archivedAt
+            createdAt: createdAt
         )
     }
 }

@@ -14,12 +14,10 @@ const WEEKDAY_VALUES = Object.entries(WEEKDAY_NAMES).reduce((result, [value, nam
 }, {});
 
 export function buildProfileResponse(user, habits, completions) {
-  const activeHabits = habits.filter((habit) => !habit.archived_at);
   return {
     id: user.id,
     email: user.email ?? null,
-    active_habit_count: activeHabits.length,
-    archived_habit_count: habits.length - activeHabits.length,
+    habit_count: habits.length,
     completion_count: completions.length,
   };
 }
@@ -39,9 +37,7 @@ export function buildHabitResponse(habit, completions, options = {}) {
     name: habit.name,
     emoji: habit.emoji_or_icon,
     color: habit.color,
-    status: habit.archived_at ? "archived" : "active",
     created_at: habit.created_at,
-    archived_at: habit.archived_at,
     schedule: {
       type: habit.schedule_type,
       weekdays: normalizeWeekdayNames(habit.schedule_weekdays),
@@ -86,10 +82,6 @@ export function buildCompletionResponse(completion, habit = null, completions = 
 }
 
 export function isHabitDueOnDate(habit, date, timeZone = "UTC") {
-  if (habit.archived_at) {
-    return false;
-  }
-
   if (habit.schedule_type === "daily") {
     return true;
   }

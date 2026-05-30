@@ -14,7 +14,6 @@ create table if not exists public.habits (
     reminder_hour integer check (reminder_hour between 0 and 23),
     reminder_minute integer check (reminder_minute between 0 and 59),
     created_at timestamptz not null default timezone('utc', now()),
-    archived_at timestamptz,
     constraint habits_id_user_id_unique unique (id, user_id)
 );
 
@@ -65,6 +64,13 @@ create policy "Users can update own habits"
     to authenticated
     using (auth.uid() = user_id)
     with check (auth.uid() = user_id);
+
+drop policy if exists "Users can delete own habits" on public.habits;
+create policy "Users can delete own habits"
+    on public.habits
+    for delete
+    to authenticated
+    using (auth.uid() = user_id);
 
 drop policy if exists "Users can view own completions" on public.habit_completions;
 create policy "Users can view own completions"

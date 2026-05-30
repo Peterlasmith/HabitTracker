@@ -114,7 +114,6 @@ struct Habit: Codable, Equatable, Identifiable {
     var targetPeriod: HabitTargetPeriod
     var reminderTime: DateComponents?
     var createdAt: Date
-    var archivedAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -128,7 +127,6 @@ struct Habit: Codable, Equatable, Identifiable {
         case targetPeriod
         case reminderTime
         case createdAt
-        case archivedAt
     }
 
     init(
@@ -142,8 +140,7 @@ struct Habit: Codable, Equatable, Identifiable {
         targetCount: Int,
         targetPeriod: HabitTargetPeriod? = nil,
         reminderTime: DateComponents?,
-        createdAt: Date,
-        archivedAt: Date?
+        createdAt: Date
     ) {
         self.id = id
         self.userId = userId
@@ -156,7 +153,6 @@ struct Habit: Codable, Equatable, Identifiable {
         self.targetPeriod = .day
         self.reminderTime = reminderTime
         self.createdAt = createdAt
-        self.archivedAt = archivedAt
     }
 
     init(from decoder: any Decoder) throws {
@@ -174,7 +170,6 @@ struct Habit: Codable, Equatable, Identifiable {
         targetPeriod = .day
         reminderTime = try container.decodeIfPresent(DateComponents.self, forKey: .reminderTime)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
-        archivedAt = try container.decodeIfPresent(Date.self, forKey: .archivedAt)
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -190,15 +185,10 @@ struct Habit: Codable, Equatable, Identifiable {
         try container.encode(HabitTargetPeriod.day, forKey: .targetPeriod)
         try container.encode(reminderTime, forKey: .reminderTime)
         try container.encode(createdAt, forKey: .createdAt)
-        try container.encode(archivedAt, forKey: .archivedAt)
-    }
-
-    var isArchived: Bool {
-        archivedAt != nil
     }
 
     func isDue(on date: Date, calendar: Calendar = .current) -> Bool {
-        !isArchived && schedule.isDue(on: date, calendar: calendar)
+        schedule.isDue(on: date, calendar: calendar)
     }
 
     func currentPeriodRange(containing date: Date, calendar: Calendar = .current) -> DateInterval {

@@ -33,7 +33,6 @@ struct TrendsView: View {
 
     private var activeHabits: [Habit] {
         environment.habits
-            .filter { !$0.isArchived }
             .sorted { $0.createdAt < $1.createdAt }
     }
 

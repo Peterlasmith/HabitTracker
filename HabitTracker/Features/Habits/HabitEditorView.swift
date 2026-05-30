@@ -268,8 +268,7 @@ struct HabitEditorView: View {
             targetCount: 1,
             targetPeriod: .day,
             reminderTime: timeComponents,
-            createdAt: existingHabit?.createdAt ?? .now,
-            archivedAt: existingHabit?.archivedAt
+            createdAt: existingHabit?.createdAt ?? .now
         )
     }
 }

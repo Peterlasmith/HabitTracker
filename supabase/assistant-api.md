@@ -55,7 +55,6 @@ Save the returned `client_identifier` and `client_secret`. The secret is only re
 The assistant API intentionally does not expose raw app DTOs or direct Supabase table contracts. Instead it returns:
 
 - stable habit fields
-- active vs archived state
 - schedule and reminder structure
 - target details
 - derived planning helpers like `due_today`, `due_this_week`, `current_streak`, and 7-day adherence

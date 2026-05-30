@@ -18,8 +18,7 @@ final class HabitTrackerTests: XCTestCase {
             targetType: .binary,
             targetCount: 1,
             reminderTime: nil,
-            createdAt: .now,
-            archivedAt: nil
+            createdAt: .now
         )
 
         let calendar = Calendar.current
@@ -45,8 +44,7 @@ final class HabitTrackerTests: XCTestCase {
             targetCount: 3,
             targetPeriod: .week,
             reminderTime: nil,
-            createdAt: .now,
-            archivedAt: nil
+            createdAt: .now
         )
 
         XCTAssertEqual(habit.targetType, .binary)
@@ -65,8 +63,7 @@ final class HabitTrackerTests: XCTestCase {
             targetType: .binary,
             targetCount: 1,
             reminderTime: nil,
-            createdAt: .now,
-            archivedAt: nil
+            createdAt: .now
         )
 
         let date = Calendar.current.nextDate(after: .now, matching: DateComponents(weekday: Weekday.tuesday.rawValue), matchingPolicy: .nextTime)!
@@ -94,8 +91,7 @@ final class HabitTrackerTests: XCTestCase {
             targetType: .binary,
             targetCount: 1,
             reminderTime: nil,
-            createdAt: .now,
-            archivedAt: nil
+            createdAt: .now
         )
 
         do {
@@ -109,7 +105,6 @@ final class HabitTrackerTests: XCTestCase {
         XCTAssertEqual(savedHabits.count, 1)
         XCTAssertEqual(savedHabits.first?.id, habit.id)
         XCTAssertEqual(savedHabits.first?.name, habit.name)
-        XCTAssertNil(savedHabits.first?.archivedAt)
     }
 
     @MainActor
@@ -140,8 +135,7 @@ final class HabitTrackerTests: XCTestCase {
             targetType: .binary,
             targetCount: 1,
             reminderTime: nil,
-            createdAt: .now,
-            archivedAt: nil
+            createdAt: .now
         )
 
         try await repository.saveHabit(habit)
@@ -174,8 +168,7 @@ final class HabitTrackerTests: XCTestCase {
             targetType: .binary,
             targetCount: 1,
             reminderTime: nil,
-            createdAt: .now,
-            archivedAt: .now
+            createdAt: .now
         )
 
         let completionTracker = TaskCompletionTracker()
@@ -191,7 +184,6 @@ final class HabitTrackerTests: XCTestCase {
         XCTAssertEqual(savedHabits.count, 1)
         XCTAssertEqual(savedHabits.first?.id, habit.id)
         XCTAssertEqual(savedHabits.first?.name, habit.name)
-        XCTAssertNotNil(savedHabits.first?.archivedAt)
 
         try? await Task.sleep(for: .milliseconds(50))
         let saveFinishedBeforeUnblock = await completionTracker.isFinished()
@@ -225,8 +217,7 @@ final class HabitTrackerTests: XCTestCase {
             targetType: .binary,
             targetCount: 1,
             reminderTime: nil,
-            createdAt: .now,
-            archivedAt: nil
+            createdAt: .now
         )
 
         try await repository.saveHabit(localOnlyHabit)
@@ -235,15 +226,13 @@ final class HabitTrackerTests: XCTestCase {
         XCTAssertEqual(syncedHabits.count, 1)
         XCTAssertEqual(syncedHabits.first?.id, localOnlyHabit.id)
         XCTAssertEqual(syncedHabits.first?.name, localOnlyHabit.name)
-        XCTAssertNil(syncedHabits.first?.archivedAt)
         let savedHabits = try await repository.fetchHabits()
         XCTAssertEqual(savedHabits.count, 1)
         XCTAssertEqual(savedHabits.first?.id, localOnlyHabit.id)
         XCTAssertEqual(savedHabits.first?.name, localOnlyHabit.name)
-        XCTAssertNil(savedHabits.first?.archivedAt)
     }
 
-    func testArchivingOneHabitDoesNotArchiveOthersWithMatchingCreationTime() async throws {
+    func testDeletingOneHabitDoesNotDeleteOthersWithMatchingCreationTime() async throws {
         let baseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let localStore = LocalStore(baseURL: baseURL)
         let repository = await MainActor.run {
@@ -266,8 +255,7 @@ final class HabitTrackerTests: XCTestCase {
             targetType: .binary,
             targetCount: 1,
             reminderTime: nil,
-            createdAt: createdAt,
-            archivedAt: nil
+            createdAt: createdAt
         )
         let secondHabit = Habit(
             id: UUID(),
@@ -279,21 +267,19 @@ final class HabitTrackerTests: XCTestCase {
             targetType: .binary,
             targetCount: 1,
             reminderTime: nil,
-            createdAt: createdAt,
-            archivedAt: nil
+            createdAt: createdAt
         )
 
         try await repository.saveHabit(firstHabit)
         try await repository.saveHabit(secondHabit)
-        try await repository.archiveHabit(firstHabit)
+        try await repository.deleteHabit(firstHabit)
 
         let savedHabits = try await repository.fetchHabits().sorted { $0.name < $1.name }
-        XCTAssertEqual(savedHabits.count, 2)
-        XCTAssertNotNil(savedHabits.first(where: { $0.id == firstHabit.id })?.archivedAt)
-        XCTAssertNil(savedHabits.first(where: { $0.id == secondHabit.id })?.archivedAt)
+        XCTAssertEqual(savedHabits.count, 1)
+        XCTAssertEqual(savedHabits.first?.id, secondHabit.id)
     }
 
-    func testArchivingOneHabitDoesNotArchiveOthers() async throws {
+    func testDeletingOneHabitDoesNotDeleteOthers() async throws {
         let baseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let localStore = LocalStore(baseURL: baseURL)
         let repository = await MainActor.run {
@@ -315,8 +301,7 @@ final class HabitTrackerTests: XCTestCase {
             targetType: .binary,
             targetCount: 1,
             reminderTime: nil,
-            createdAt: .now,
-            archivedAt: nil
+            createdAt: .now
         )
         let secondHabit = Habit(
             id: UUID(),
@@ -328,21 +313,19 @@ final class HabitTrackerTests: XCTestCase {
             targetType: .binary,
             targetCount: 1,
             reminderTime: nil,
-            createdAt: .now.addingTimeInterval(1),
-            archivedAt: nil
+            createdAt: .now.addingTimeInterval(1)
         )
 
         try await repository.saveHabit(firstHabit)
         try await repository.saveHabit(secondHabit)
-        try await repository.archiveHabit(firstHabit)
+        try await repository.deleteHabit(firstHabit)
 
         let savedHabits = try await repository.fetchHabits()
-        XCTAssertEqual(savedHabits.count, 2)
-        XCTAssertNotNil(savedHabits.first(where: { $0.id == firstHabit.id })?.archivedAt)
-        XCTAssertNil(savedHabits.first(where: { $0.id == secondHabit.id })?.archivedAt)
+        XCTAssertEqual(savedHabits.count, 1)
+        XCTAssertEqual(savedHabits.first?.id, secondHabit.id)
     }
 
-    func testArchivingHabitWaitsForRemoteUpsertBeforeCompleting() async throws {
+    func testDeletingHabitWaitsForRemoteDeleteBeforeCompleting() async throws {
         let baseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let localStore = LocalStore(baseURL: baseURL)
         let remote = BlockingRemoteDataSource()
@@ -364,31 +347,66 @@ final class HabitTrackerTests: XCTestCase {
             targetType: .binary,
             targetCount: 1,
             reminderTime: nil,
-            createdAt: .now,
-            archivedAt: nil
+            createdAt: .now
         )
         try await localStore.writeHabits([habit])
 
         let completionTracker = TaskCompletionTracker()
-        let archiveTask = Task {
-            try await repository.archiveHabit(habit)
+        let deleteTask = Task {
+            try await repository.deleteHabit(habit)
             await completionTracker.markFinished()
         }
 
-        let remoteCallStarted = await remote.waitForUpsertToStart()
+        let remoteCallStarted = await remote.waitForDeleteToStart()
         XCTAssertTrue(remoteCallStarted)
 
         let savedHabits = try await repository.fetchHabits()
-        XCTAssertNotNil(savedHabits.first?.archivedAt)
+        XCTAssertTrue(savedHabits.isEmpty)
 
         try? await Task.sleep(for: .milliseconds(50))
-        let archiveFinishedBeforeUnblock = await completionTracker.isFinished()
-        XCTAssertFalse(archiveFinishedBeforeUnblock)
+        let deleteFinishedBeforeUnblock = await completionTracker.isFinished()
+        XCTAssertFalse(deleteFinishedBeforeUnblock)
 
-        await remote.finishUpserts()
-        try await archiveTask.value
-        let archiveFinishedAfterUnblock = await completionTracker.isFinished()
-        XCTAssertTrue(archiveFinishedAfterUnblock)
+        await remote.finishDeletes()
+        try await deleteTask.value
+        let deleteFinishedAfterUnblock = await completionTracker.isFinished()
+        XCTAssertTrue(deleteFinishedAfterUnblock)
+    }
+
+    func testDeletingHabitRestoresLocalStateWhenRemoteDeleteFails() async throws {
+        let baseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let localStore = LocalStore(baseURL: baseURL)
+        let repository = await MainActor.run {
+            DefaultHabitRepository(
+                localStore: localStore,
+                remote: FailingRemoteDataSource(),
+                authService: MockAuthService(authorizationHeaderValue: "Bearer test-token")
+            )
+        }
+
+        let habit = Habit(
+            id: UUID(),
+            userId: UUID(),
+            name: "Meditate",
+            emojiOrIcon: "🧘",
+            color: .rose,
+            schedule: .daily,
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: .now
+        )
+        try await localStore.writeHabits([habit])
+
+        do {
+            try await repository.deleteHabit(habit)
+            XCTFail("Expected remote delete failure")
+        } catch {
+            XCTAssertEqual(error as? AppError, .network("Remote unavailable"))
+        }
+
+        let savedHabits = try await repository.fetchHabits()
+        XCTAssertEqual(savedHabits.map(\.id), [habit.id])
     }
 
     func testSavingUpdatedHabitDoesNotChangeOthersWithMatchingCreationTime() async throws {
@@ -414,8 +432,7 @@ final class HabitTrackerTests: XCTestCase {
             targetType: .binary,
             targetCount: 1,
             reminderTime: nil,
-            createdAt: createdAt,
-            archivedAt: nil
+            createdAt: createdAt
         )
         let secondHabit = Habit(
             id: UUID(),
@@ -427,8 +444,7 @@ final class HabitTrackerTests: XCTestCase {
             targetType: .binary,
             targetCount: 1,
             reminderTime: nil,
-            createdAt: createdAt,
-            archivedAt: nil
+            createdAt: createdAt
         )
         var updatedFirstHabit = firstHabit
         updatedFirstHabit.name = "Deep Read"
@@ -603,8 +619,7 @@ final class HabitTrackerTests: XCTestCase {
             targetType: .binary,
             targetCount: 1,
             reminderTime: nil,
-            createdAt: .now,
-            archivedAt: nil
+            createdAt: .now
         )
         let reading = Habit(
             id: UUID(),
@@ -616,8 +631,7 @@ final class HabitTrackerTests: XCTestCase {
             targetType: .binary,
             targetCount: 1,
             reminderTime: nil,
-            createdAt: .now.addingTimeInterval(1),
-            archivedAt: nil
+            createdAt: .now.addingTimeInterval(1)
         )
 
         environment.currentUser = user
@@ -654,8 +668,7 @@ final class HabitTrackerTests: XCTestCase {
             targetType: .binary,
             targetCount: 1,
             reminderTime: nil,
-            createdAt: .now,
-            archivedAt: nil
+            createdAt: .now
         )
 
         environment.currentUser = user
@@ -694,8 +707,7 @@ final class HabitTrackerTests: XCTestCase {
             targetType: .binary,
             targetCount: 1,
             reminderTime: nil,
-            createdAt: .now,
-            archivedAt: nil
+            createdAt: .now
         )
 
         environment.currentUser = user
@@ -708,7 +720,88 @@ final class HabitTrackerTests: XCTestCase {
     }
 
     @MainActor
-    func testArchiveRollbackRestoresLocalStateWhenRemoteUpsertFails() async throws {
+    func testDeleteHabitRemovesHabitAndCompletionsFromLocalState() async throws {
+        let localStore = LocalStore(
+            baseURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        )
+        let authService = SupabaseAuthService()
+        let habitRepository = DefaultHabitRepository(
+            localStore: localStore,
+            remote: SuccessfulRemoteDataSource(),
+            authService: authService
+        )
+        let environment = AppEnvironment(
+            authService: authService,
+            reminderService: NoopReminderService(),
+            widgetSyncService: WidgetSyncService(),
+            analyticsService: AnalyticsService(),
+            defaults: UserDefaults(suiteName: UUID().uuidString) ?? .standard,
+            localStore: localStore,
+            habitRepository: habitRepository,
+            checkInRepository: StubCheckInRepository()
+        )
+
+        let userId = UUID()
+        let deletedHabit = Habit(
+            id: UUID(),
+            userId: userId,
+            name: "Stretch",
+            emojiOrIcon: "🧘",
+            color: .rose,
+            schedule: .daily,
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: .now
+        )
+        let keptHabit = Habit(
+            id: UUID(),
+            userId: userId,
+            name: "Read",
+            emojiOrIcon: "📚",
+            color: .teal,
+            schedule: .daily,
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: .now.addingTimeInterval(1)
+        )
+        let deletedCompletion = HabitCompletion(
+            id: UUID(),
+            habitId: deletedHabit.id,
+            userId: userId,
+            date: .now,
+            count: 1,
+            note: "",
+            createdAt: .now
+        )
+        let keptCompletion = HabitCompletion(
+            id: UUID(),
+            habitId: keptHabit.id,
+            userId: userId,
+            date: .now,
+            count: 1,
+            note: "",
+            createdAt: .now
+        )
+
+        environment.habits = [deletedHabit, keptHabit]
+        environment.completions = [deletedCompletion, keptCompletion]
+        try await localStore.writeHabits(environment.habits)
+        try await localStore.writeCompletions(environment.completions)
+
+        await environment.deleteHabit(deletedHabit)
+
+        XCTAssertEqual(environment.habits.map(\.id), [keptHabit.id])
+        XCTAssertEqual(environment.completions.map(\.habitId), [keptHabit.id])
+        let persistedHabits = try await localStore.readHabits()
+        XCTAssertEqual(persistedHabits.map(\.id), [keptHabit.id])
+        let persistedCompletions = try await localStore.readCompletions()
+        XCTAssertEqual(persistedCompletions.map(\.habitId), [keptHabit.id])
+    }
+
+    @MainActor
+    func testDeleteRollbackRestoresLocalStateWhenRemoteDeleteFails() async throws {
         let localStore = LocalStore(
             baseURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         )
@@ -739,19 +832,32 @@ final class HabitTrackerTests: XCTestCase {
             targetType: .binary,
             targetCount: 1,
             reminderTime: nil,
-            createdAt: .now,
-            archivedAt: nil
+            createdAt: .now
+        )
+        let completion = HabitCompletion(
+            id: UUID(),
+            habitId: habit.id,
+            userId: habit.userId,
+            date: .now,
+            count: 1,
+            note: "",
+            createdAt: .now
         )
 
         environment.habits = [habit]
+        environment.completions = [completion]
         try await localStore.writeHabits([habit])
+        try await localStore.writeCompletions([completion])
 
-        await environment.archiveHabit(habit)
+        await environment.deleteHabit(habit)
 
-        XCTAssertNil(environment.habits.first?.archivedAt)
+        XCTAssertEqual(environment.habits.map(\.id), [habit.id])
+        XCTAssertEqual(environment.completions.map(\.habitId), [habit.id])
         XCTAssertEqual(environment.errorMessage, "Remote unavailable")
         let persistedHabits = try await localStore.readHabits()
-        XCTAssertNil(persistedHabits.first?.archivedAt)
+        XCTAssertEqual(persistedHabits.map(\.id), [habit.id])
+        let persistedCompletions = try await localStore.readCompletions()
+        XCTAssertEqual(persistedCompletions.map(\.habitId), [habit.id])
     }
 
     @MainActor
@@ -838,6 +944,9 @@ private struct FailingRemoteDataSource: HabitRemoteDataSource {
     func upsertHabit(_ habit: Habit, authHeader: String?) async throws {
         throw AppError.network("Remote unavailable")
     }
+    func deleteHabit(_ habit: Habit, authHeader: String?) async throws {
+        throw AppError.network("Remote unavailable")
+    }
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] { [] }
     func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws {
         throw AppError.network("Remote unavailable")
@@ -847,6 +956,7 @@ private struct FailingRemoteDataSource: HabitRemoteDataSource {
 private struct SuccessfulRemoteDataSource: HabitRemoteDataSource {
     func fetchHabits(authHeader: String?) async throws -> [Habit] { [] }
     func upsertHabit(_ habit: Habit, authHeader: String?) async throws {}
+    func deleteHabit(_ habit: Habit, authHeader: String?) async throws {}
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] { [] }
     func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws {}
 }
@@ -863,20 +973,30 @@ private actor EventuallyConsistentRemoteDataSource: HabitRemoteDataSource {
         // does not necessarily include the record yet.
     }
 
+    func deleteHabit(_ habit: Habit, authHeader: String?) async throws {}
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] { [] }
     func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws {}
 }
 
 private actor BlockingRemoteDataSource: HabitRemoteDataSource {
     private var didStartUpsert = false
-    private var continuation: CheckedContinuation<Void, Never>?
+    private var didStartDelete = false
+    private var upsertContinuation: CheckedContinuation<Void, Never>?
+    private var deleteContinuation: CheckedContinuation<Void, Never>?
 
     func fetchHabits(authHeader: String?) async throws -> [Habit] { [] }
 
     func upsertHabit(_ habit: Habit, authHeader: String?) async throws {
         didStartUpsert = true
         await withCheckedContinuation { continuation in
-            self.continuation = continuation
+            self.upsertContinuation = continuation
+        }
+    }
+
+    func deleteHabit(_ habit: Habit, authHeader: String?) async throws {
+        didStartDelete = true
+        await withCheckedContinuation { continuation in
+            self.deleteContinuation = continuation
         }
     }
 
@@ -894,8 +1014,23 @@ private actor BlockingRemoteDataSource: HabitRemoteDataSource {
     }
 
     func finishUpserts() {
-        continuation?.resume()
-        continuation = nil
+        upsertContinuation?.resume()
+        upsertContinuation = nil
+    }
+
+    func waitForDeleteToStart() async -> Bool {
+        for _ in 0..<50 {
+            if didStartDelete {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return false
+    }
+
+    func finishDeletes() {
+        deleteContinuation?.resume()
+        deleteContinuation = nil
     }
 }
 
@@ -905,6 +1040,13 @@ private actor ExpiringTokenRemoteDataSource: HabitRemoteDataSource {
     func fetchHabits(authHeader: String?) async throws -> [Habit] { [] }
 
     func upsertHabit(_ habit: Habit, authHeader: String?) async throws {
+        headers.append(authHeader)
+        if authHeader == "Bearer expired-access-token" {
+            throw AppError.network("Invalid JWT")
+        }
+    }
+
+    func deleteHabit(_ habit: Habit, authHeader: String?) async throws {
         headers.append(authHeader)
         if authHeader == "Bearer expired-access-token" {
             throw AppError.network("Invalid JWT")
@@ -928,6 +1070,7 @@ private actor DuplicateCompletionRemoteDataSource: HabitRemoteDataSource {
 
     func fetchHabits(authHeader: String?) async throws -> [Habit] { [] }
     func upsertHabit(_ habit: Habit, authHeader: String?) async throws {}
+    func deleteHabit(_ habit: Habit, authHeader: String?) async throws {}
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] { completions }
     func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws {}
 }
@@ -955,7 +1098,9 @@ private actor StubHabitRepository: HabitRepository {
             habits.append(habit)
         }
     }
-    func archiveHabit(_ habit: Habit) async throws {}
+    func deleteHabit(_ habit: Habit) async throws {
+        habits.removeAll { $0.id == habit.id }
+    }
     func sync() async throws -> [Habit] { habits }
 }
 

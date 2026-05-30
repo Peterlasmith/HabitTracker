@@ -13,8 +13,7 @@ final class RepositoryMappingTests: XCTestCase {
             targetType: .binary,
             targetCount: 1,
             reminderTime: DateComponents(hour: 7, minute: 15),
-            createdAt: .now,
-            archivedAt: nil
+            createdAt: .now
         )
 
         let row = HabitRow(habit: habit)
@@ -35,8 +34,7 @@ final class RepositoryMappingTests: XCTestCase {
             targetType: .binary,
             targetCount: 1,
             reminderTime: nil,
-            createdAt: .now,
-            archivedAt: nil
+            createdAt: .now
         )
 
         let row = HabitRow(habit: habit)
@@ -44,11 +42,9 @@ final class RepositoryMappingTests: XCTestCase {
         let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
         let encodedRow = try XCTUnwrap(payload.first)
 
-        XCTAssertTrue(encodedRow.keys.contains("archived_at"))
         XCTAssertTrue(encodedRow.keys.contains("reminder_hour"))
         XCTAssertTrue(encodedRow.keys.contains("reminder_minute"))
         XCTAssertTrue(encodedRow.keys.contains("target_period"))
-        XCTAssertTrue(encodedRow["archived_at"] is NSNull)
         XCTAssertTrue(encodedRow["reminder_hour"] is NSNull)
         XCTAssertTrue(encodedRow["reminder_minute"] is NSNull)
         XCTAssertEqual(encodedRow["target_period"] as? String, "day")

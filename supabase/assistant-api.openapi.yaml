@@ -22,7 +22,6 @@ components:
         - name
         - emoji
         - color
-        - status
         - schedule
         - target
         - reminder
@@ -38,16 +37,8 @@ components:
           type: string
         color:
           type: string
-        status:
-          type: string
-          enum: [active, archived]
         created_at:
           type: string
-          format: date-time
-        archived_at:
-          type:
-            - string
-            - "null"
           format: date-time
         schedule:
           type: object
@@ -210,10 +201,6 @@ paths:
         - assistantBearer: []
       summary: List habits with planning-friendly derived fields.
       parameters:
-        - name: include_archived
-          in: query
-          schema:
-            type: boolean
         - name: history_days
           in: query
           schema:

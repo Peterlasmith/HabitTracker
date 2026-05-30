@@ -76,7 +76,7 @@ struct SettingsView: View {
                         .textCase(.uppercase)
                         .tracking(1.1)
 
-                    Text("\(environment.habits.filter { !$0.isArchived }.count) active habits")
+                    Text("\(environment.habits.count) habits")
                         .font(AppTheme.serif(size: 24, weight: .semibold))
                         .foregroundStyle(AppTheme.textPrimary)
 

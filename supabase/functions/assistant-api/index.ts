@@ -43,10 +43,8 @@ Deno.serve(async (request) => {
     }
 
     if (path.endsWith("/habits")) {
-      const includeArchived = url.searchParams.get("include_archived") === "true";
       const historyDays = Number(url.searchParams.get("history_days") ?? "14");
-      const filteredHabits = habits.filter((habit) => includeArchived || !habit.archived_at);
-      const data = filteredHabits.map((habit) =>
+      const data = habits.map((habit) =>
         buildHabitResponse(
           habit,
           completionsForHabit(completions, habit.id),
@@ -58,7 +56,6 @@ Deno.serve(async (request) => {
         data,
         meta: {
           count: data.length,
-          include_archived: includeArchived,
         },
       });
     }

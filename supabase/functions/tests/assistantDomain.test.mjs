@@ -14,7 +14,6 @@ const readingHabit = {
   name: "Read",
   emoji_or_icon: "📚",
   color: "teal",
-  archived_at: null,
   created_at: "2026-05-01T00:00:00.000Z",
   schedule_type: "weekdays",
   schedule_weekdays: [2, 4, 6],

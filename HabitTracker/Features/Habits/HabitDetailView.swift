@@ -4,7 +4,7 @@ struct HabitDetailView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @Environment(\.dismiss) private var dismiss
     @State private var showingEditor = false
-    @State private var showingArchiveConfirmation = false
+    @State private var showingDeleteConfirmation = false
 
     let habit: Habit
 
@@ -86,26 +86,26 @@ struct HabitDetailView: View {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button("Edit") { showingEditor = true }
 
-                Button("Archive") {
-                    showingArchiveConfirmation = true
+                Button("Delete", role: .destructive) {
+                    showingDeleteConfirmation = true
                 }
             }
         }
         .confirmationDialog(
-            "Archive \(habit.name)?",
-            isPresented: $showingArchiveConfirmation,
+            "Delete \(habit.name)?",
+            isPresented: $showingDeleteConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Archive Habit") {
+            Button("Delete Habit", role: .destructive) {
                 Task {
-                    await environment.archiveHabit(habit)
+                    await environment.deleteHabit(habit)
                     dismiss()
                 }
             }
 
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes the habit from your active lists and keeps its history in Archived.")
+            Text("This permanently deletes the habit and all of its history.")
         }
         .sheet(isPresented: $showingEditor) {
             NavigationStack {
