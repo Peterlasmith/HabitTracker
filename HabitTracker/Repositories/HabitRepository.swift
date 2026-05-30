@@ -43,8 +43,9 @@ actor DefaultHabitRepository: HabitRepository {
             habits.append(habit)
         }
         try await localStore.writeHabits(habits)
-        let authHeader = await MainActor.run { authService.authorizationHeader() }
-        try? await remote.upsertHabit(habit, authHeader: authHeader)
+        try await performAuthorizedRemoteRequest { [self] authHeader in
+            try await self.remote.upsertHabit(habit, authHeader: authHeader)
+        }
     }
 
     func archiveHabit(_ habit: Habit) async throws {
@@ -55,16 +56,40 @@ actor DefaultHabitRepository: HabitRepository {
 
     func sync() async throws -> [Habit] {
         let localHabits = try await localStore.readHabits()
-        let authHeader = await MainActor.run { authService.authorizationHeader() }
 
         for habit in localHabits {
-            try? await remote.upsertHabit(habit, authHeader: authHeader)
+            try? await performAuthorizedRemoteRequest { [self] authHeader in
+                try await self.remote.upsertHabit(habit, authHeader: authHeader)
+            }
         }
 
-        let remoteHabits = try await remote.fetchHabits(authHeader: authHeader)
+        let remoteHabits = try await performAuthorizedRemoteRequest { [self] authHeader in
+            try await self.remote.fetchHabits(authHeader: authHeader)
+        }
         let mergedHabits = mergeHabits(localHabits, with: remoteHabits)
         try await localStore.writeHabits(mergedHabits)
         return mergedHabits
+    }
+
+    private func performAuthorizedRemoteRequest<T>(
+        _ operation: @escaping @Sendable (String?) async throws -> T
+    ) async throws -> T {
+        let authHeader = await MainActor.run { authService.authorizationHeader() }
+
+        do {
+            return try await operation(authHeader)
+        } catch {
+            guard authHeader == nil || error.isExpiredSupabaseSession else {
+                throw error
+            }
+
+            _ = try await authService.restoreSession()
+            guard let refreshedAuthHeader = await MainActor.run(body: { authService.authorizationHeader() }) else {
+                throw AppError.network("Your session expired. Sign in again to keep going.")
+            }
+
+            return try await operation(refreshedAuthHeader)
+        }
     }
 
     private func mergeHabits(_ localHabits: [Habit], with remoteHabits: [Habit]) -> [Habit] {
@@ -100,22 +125,47 @@ actor DefaultCheckInRepository: CheckInRepository {
         var completions = try await localStore.readCompletions()
         completions = replaceCompletion(completion, in: completions)
         try await localStore.writeCompletions(completions)
-        let authHeader = await MainActor.run { authService.authorizationHeader() }
-        try? await remote.upsertCompletion(completion, authHeader: authHeader)
+        try await performAuthorizedRemoteRequest { [self] authHeader in
+            try await self.remote.upsertCompletion(completion, authHeader: authHeader)
+        }
     }
 
     func sync() async throws -> [HabitCompletion] {
         let localCompletions = try await localStore.readCompletions()
-        let authHeader = await MainActor.run { authService.authorizationHeader() }
 
         for completion in localCompletions {
-            try? await remote.upsertCompletion(completion, authHeader: authHeader)
+            try? await performAuthorizedRemoteRequest { [self] authHeader in
+                try await self.remote.upsertCompletion(completion, authHeader: authHeader)
+            }
         }
 
-        let remoteCompletions = try await remote.fetchCompletions(authHeader: authHeader)
+        let remoteCompletions = try await performAuthorizedRemoteRequest { [self] authHeader in
+            try await self.remote.fetchCompletions(authHeader: authHeader)
+        }
         let mergedCompletions = mergeCompletions(localCompletions, with: remoteCompletions)
         try await localStore.writeCompletions(mergedCompletions)
         return mergedCompletions
+    }
+
+    private func performAuthorizedRemoteRequest<T>(
+        _ operation: @escaping @Sendable (String?) async throws -> T
+    ) async throws -> T {
+        let authHeader = await MainActor.run { authService.authorizationHeader() }
+
+        do {
+            return try await operation(authHeader)
+        } catch {
+            guard authHeader == nil || error.isExpiredSupabaseSession else {
+                throw error
+            }
+
+            _ = try await authService.restoreSession()
+            guard let refreshedAuthHeader = await MainActor.run(body: { authService.authorizationHeader() }) else {
+                throw AppError.network("Your session expired. Sign in again to keep going.")
+            }
+
+            return try await operation(refreshedAuthHeader)
+        }
     }
 
     private func mergeCompletions(_ localCompletions: [HabitCompletion], with remoteCompletions: [HabitCompletion]) -> [HabitCompletion] {
@@ -172,6 +222,16 @@ actor DefaultCheckInRepository: CheckInRepository {
 private struct CompletionKey: Hashable {
     let habitId: UUID
     let day: Date
+}
+
+private extension Error {
+    var isExpiredSupabaseSession: Bool {
+        let message = localizedDescription.lowercased()
+        return message.contains("bad_jwt")
+            || message.contains("invalid jwt")
+            || message.contains("token is expired")
+            || message.contains("session expired")
+    }
 }
 
 actor LocalStore {

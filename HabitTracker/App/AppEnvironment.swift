@@ -37,6 +37,7 @@ final class AppEnvironment: ObservableObject {
         widgetSyncService: WidgetSyncService,
         analyticsService: AnalyticsService,
         defaults: UserDefaults,
+        localStore: LocalStore? = nil,
         habitRepository: HabitRepository? = nil,
         checkInRepository: CheckInRepository? = nil
     ) {
@@ -45,7 +46,7 @@ final class AppEnvironment: ObservableObject {
         self.widgetSyncService = widgetSyncService
         self.analyticsService = analyticsService
         self.defaults = defaults
-        self.localStore = LocalStore()
+        self.localStore = localStore ?? LocalStore()
 
         let remote = SupabaseHabitRemoteDataSource()
         if let habitRepository { self.habitRepository = habitRepository } else { self.habitRepository = DefaultHabitRepository(localStore: self.localStore, remote: remote, authService: authService) }
@@ -155,16 +156,20 @@ final class AppEnvironment: ObservableObject {
 
         let habitCopy = habit
         let updatedHabitsCopy = updatedHabits
-        return await self.runBusyTask { [habitCopy, updatedHabitsCopy] in
+        let didSave = await self.runBusyTask { [habitCopy, updatedHabitsCopy] in
             try await self.habitRepository.saveHabit(habitCopy)
             try await self.reminderService.rescheduleNotifications(for: updatedHabitsCopy)
             await self.widgetSyncService.publish(habits: updatedHabitsCopy, completions: self.completions)
             self.analyticsService.track(.createdHabit)
             return true
-        } ?? { [previousHabits] in
-            self.habits = previousHabits
+        } ?? false
+
+        guard didSave else {
+            await self.rollbackHabits(to: previousHabits)
             return false
-        }()
+        }
+
+        return true
     }
 
     func enableReminderPermissions() async {
@@ -194,13 +199,17 @@ final class AppEnvironment: ObservableObject {
 
         let updatedHabitsCopy = updatedHabits
         let archivedHabitCopy = archivedHabit
-        await self.runBusyTask { [updatedHabitsCopy, archivedHabitCopy] in
+        let didArchive = await self.runBusyTask { [updatedHabitsCopy, archivedHabitCopy] in
             try await self.habitRepository.archiveHabit(archivedHabitCopy)
             try await self.reminderService.rescheduleNotifications(for: updatedHabitsCopy)
             await self.widgetSyncService.publish(habits: updatedHabitsCopy, completions: self.completions)
-        } ?? { [previousHabits] in
-            self.habits = previousHabits
-        }()
+            return true
+        } ?? false
+
+        guard didArchive else {
+            await self.rollbackHabits(to: previousHabits)
+            return
+        }
     }
 
     func restoreHabit(_ habit: Habit) async {
@@ -220,13 +229,17 @@ final class AppEnvironment: ObservableObject {
 
         let updatedHabitsCopy = updatedHabits
         let restoredHabitCopy = restoredHabit
-        await self.runBusyTask { [restoredHabitCopy, updatedHabitsCopy] in
+        let didRestore = await self.runBusyTask { [restoredHabitCopy, updatedHabitsCopy] in
             try await self.habitRepository.saveHabit(restoredHabitCopy)
             try await self.reminderService.rescheduleNotifications(for: updatedHabitsCopy)
             await self.widgetSyncService.publish(habits: updatedHabitsCopy, completions: self.completions)
-        } ?? { [previousHabits] in
-            self.habits = previousHabits
-        }()
+            return true
+        } ?? false
+
+        guard didRestore else {
+            await self.rollbackHabits(to: previousHabits)
+            return
+        }
     }
 
     func recordCompletion(for habit: Habit, count: Int, note: String = "", date: Date = .now) async {
@@ -258,13 +271,16 @@ final class AppEnvironment: ObservableObject {
             return
         }
 
-        await self.runBusyTask {
+        let didRecord = await self.runBusyTask {
             try await self.checkInRepository.recordCompletion(completion)
             self.analyticsService.track(.completedHabit)
-        } ?? { [previousCompletions] in
-            self.completions = previousCompletions
-            self.widgetSyncService.publish(habits: self.habits, completions: previousCompletions)
-        }()
+            return true
+        } ?? false
+
+        guard didRecord else {
+            await self.rollbackCompletions(to: previousCompletions)
+            return
+        }
     }
 
     @MainActor
@@ -333,6 +349,19 @@ final class AppEnvironment: ObservableObject {
 
     private func syncReminders() async {
         try? await self.reminderService.rescheduleNotifications(for: self.habits)
+    }
+
+    private func rollbackHabits(to previousHabits: [Habit]) async {
+        self.habits = previousHabits
+        try? await self.localStore.writeHabits(previousHabits)
+        try? await self.reminderService.rescheduleNotifications(for: previousHabits)
+        self.widgetSyncService.publish(habits: previousHabits, completions: self.completions)
+    }
+
+    private func rollbackCompletions(to previousCompletions: [HabitCompletion]) async {
+        self.completions = previousCompletions
+        try? await self.localStore.writeCompletions(previousCompletions)
+        self.widgetSyncService.publish(habits: self.habits, completions: previousCompletions)
     }
 
     private func determinePhase() async {

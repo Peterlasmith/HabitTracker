@@ -73,14 +73,60 @@ final class HabitTrackerTests: XCTestCase {
         XCTAssertFalse(habit.isDue(on: date))
     }
 
-    func testSavingHabitSucceedsLocallyWhenRemoteUpsertFails() async throws {
+    func testSavingHabitThrowsWhenRemoteUpsertFails() async throws {
         let baseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let localStore = LocalStore(baseURL: baseURL)
         let repository = await MainActor.run {
             DefaultHabitRepository(
                 localStore: localStore,
                 remote: FailingRemoteDataSource(),
-                authService: MockAuthService()
+                authService: MockAuthService(authorizationHeaderValue: "Bearer test-token")
+            )
+        }
+
+        let habit = Habit(
+            id: UUID(),
+            userId: UUID(),
+            name: "Walk",
+            emojiOrIcon: "🚶",
+            color: .teal,
+            schedule: .daily,
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: .now,
+            archivedAt: nil
+        )
+
+        do {
+            try await repository.saveHabit(habit)
+            XCTFail("Expected remote upsert failure")
+        } catch {
+            XCTAssertEqual(error as? AppError, .network("Remote unavailable"))
+        }
+
+        let savedHabits = try await repository.fetchHabits()
+        XCTAssertEqual(savedHabits.count, 1)
+        XCTAssertEqual(savedHabits.first?.id, habit.id)
+        XCTAssertEqual(savedHabits.first?.name, habit.name)
+        XCTAssertNil(savedHabits.first?.archivedAt)
+    }
+
+    @MainActor
+    func testSavingHabitRetriesAfterRefreshingExpiredSession() async throws {
+        let baseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let localStore = LocalStore(baseURL: baseURL)
+        let remote = ExpiringTokenRemoteDataSource()
+        let authService = RefreshingMockAuthService(
+            user: AppUser(id: UUID(), email: "test@example.com"),
+            initialAuthorizationHeader: "Bearer expired-access-token",
+            refreshedAuthorizationHeader: "Bearer fresh-access-token"
+        )
+        let repository = await MainActor.run {
+            DefaultHabitRepository(
+                localStore: localStore,
+                remote: remote,
+                authService: authService
             )
         }
 
@@ -100,11 +146,10 @@ final class HabitTrackerTests: XCTestCase {
 
         try await repository.saveHabit(habit)
 
-        let savedHabits = try await repository.fetchHabits()
-        XCTAssertEqual(savedHabits.count, 1)
-        XCTAssertEqual(savedHabits.first?.id, habit.id)
-        XCTAssertEqual(savedHabits.first?.name, habit.name)
-        XCTAssertNil(savedHabits.first?.archivedAt)
+        let receivedHeaders = await remote.receivedHeaders()
+        XCTAssertEqual(receivedHeaders, ["Bearer expired-access-token", "Bearer fresh-access-token"])
+        let restoreSessionCallCount = authService.restoreSessionCallCount
+        XCTAssertEqual(restoreSessionCallCount, 1)
     }
 
     func testSavingHabitWaitsForRemoteUpsertBeforeCompleting() async throws {
@@ -204,8 +249,8 @@ final class HabitTrackerTests: XCTestCase {
         let repository = await MainActor.run {
             DefaultHabitRepository(
                 localStore: localStore,
-                remote: FailingRemoteDataSource(),
-                authService: MockAuthService()
+                remote: SuccessfulRemoteDataSource(),
+                authService: MockAuthService(authorizationHeaderValue: "Bearer test-token")
             )
         }
 
@@ -254,8 +299,8 @@ final class HabitTrackerTests: XCTestCase {
         let repository = await MainActor.run {
             DefaultHabitRepository(
                 localStore: localStore,
-                remote: FailingRemoteDataSource(),
-                authService: MockAuthService()
+                remote: SuccessfulRemoteDataSource(),
+                authService: MockAuthService(authorizationHeaderValue: "Bearer test-token")
             )
         }
 
@@ -352,8 +397,8 @@ final class HabitTrackerTests: XCTestCase {
         let repository = await MainActor.run {
             DefaultHabitRepository(
                 localStore: localStore,
-                remote: FailingRemoteDataSource(),
-                authService: MockAuthService()
+                remote: SuccessfulRemoteDataSource(),
+                authService: MockAuthService(authorizationHeaderValue: "Bearer test-token")
             )
         }
 
@@ -404,8 +449,8 @@ final class HabitTrackerTests: XCTestCase {
         let repository = await MainActor.run {
             DefaultCheckInRepository(
                 localStore: localStore,
-                remote: FailingRemoteDataSource(),
-                authService: MockAuthService()
+                remote: SuccessfulRemoteDataSource(),
+                authService: MockAuthService(authorizationHeaderValue: "Bearer test-token")
             )
         }
 
@@ -663,6 +708,53 @@ final class HabitTrackerTests: XCTestCase {
     }
 
     @MainActor
+    func testArchiveRollbackRestoresLocalStateWhenRemoteUpsertFails() async throws {
+        let localStore = LocalStore(
+            baseURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        )
+        let authService = SupabaseAuthService()
+        let habitRepository = DefaultHabitRepository(
+            localStore: localStore,
+            remote: FailingRemoteDataSource(),
+            authService: authService
+        )
+        let environment = AppEnvironment(
+            authService: authService,
+            reminderService: NoopReminderService(),
+            widgetSyncService: WidgetSyncService(),
+            analyticsService: AnalyticsService(),
+            defaults: UserDefaults(suiteName: UUID().uuidString) ?? .standard,
+            localStore: localStore,
+            habitRepository: habitRepository,
+            checkInRepository: StubCheckInRepository()
+        )
+
+        let habit = Habit(
+            id: UUID(),
+            userId: UUID(),
+            name: "Stretch",
+            emojiOrIcon: "🧘",
+            color: .rose,
+            schedule: .daily,
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: .now,
+            archivedAt: nil
+        )
+
+        environment.habits = [habit]
+        try await localStore.writeHabits([habit])
+
+        await environment.archiveHabit(habit)
+
+        XCTAssertNil(environment.habits.first?.archivedAt)
+        XCTAssertEqual(environment.errorMessage, "Remote unavailable")
+        let persistedHabits = try await localStore.readHabits()
+        XCTAssertNil(persistedHabits.first?.archivedAt)
+    }
+
+    @MainActor
     func testRestoreSessionRefreshesExpiredAccessToken() async throws {
         let user = SupabaseUser(id: UUID(), email: "test@example.com")
         let sessionStore = SessionStore(
@@ -752,6 +844,13 @@ private struct FailingRemoteDataSource: HabitRemoteDataSource {
     }
 }
 
+private struct SuccessfulRemoteDataSource: HabitRemoteDataSource {
+    func fetchHabits(authHeader: String?) async throws -> [Habit] { [] }
+    func upsertHabit(_ habit: Habit, authHeader: String?) async throws {}
+    func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] { [] }
+    func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws {}
+}
+
 private actor EventuallyConsistentRemoteDataSource: HabitRemoteDataSource {
     private var fetchedHabits: [Habit] = []
 
@@ -797,6 +896,26 @@ private actor BlockingRemoteDataSource: HabitRemoteDataSource {
     func finishUpserts() {
         continuation?.resume()
         continuation = nil
+    }
+}
+
+private actor ExpiringTokenRemoteDataSource: HabitRemoteDataSource {
+    private var headers: [String?] = []
+
+    func fetchHabits(authHeader: String?) async throws -> [Habit] { [] }
+
+    func upsertHabit(_ habit: Habit, authHeader: String?) async throws {
+        headers.append(authHeader)
+        if authHeader == "Bearer expired-access-token" {
+            throw AppError.network("Invalid JWT")
+        }
+    }
+
+    func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] { [] }
+    func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws {}
+
+    func receivedHeaders() -> [String?] {
+        headers
     }
 }
 
@@ -877,13 +996,45 @@ private struct NoopReminderService: ReminderService {
 @MainActor
 private final class MockAuthService: AuthService {
     var currentUser: AppUser?
+    private let authorizationHeaderValue: String?
+
+    init(currentUser: AppUser? = nil, authorizationHeaderValue: String? = nil) {
+        self.currentUser = currentUser
+        self.authorizationHeaderValue = authorizationHeaderValue
+    }
 
     func restoreSession() async throws -> AppUser? { currentUser }
     func signIn(email: String, password: String) async throws -> AppUser { throw AppError.network("Unused") }
     func signUp(email: String, password: String) async throws -> AppUser { throw AppError.network("Unused") }
     func deleteAccount(currentPassword: String) async throws {}
     func signOut() async throws {}
-    func authorizationHeader() -> String? { nil }
+    func authorizationHeader() -> String? { authorizationHeaderValue }
+}
+
+@MainActor
+private final class RefreshingMockAuthService: AuthService {
+    var currentUser: AppUser?
+    var authorizationHeaderValue: String?
+    let refreshedAuthorizationHeader: String
+    private(set) var restoreSessionCallCount = 0
+
+    init(user: AppUser, initialAuthorizationHeader: String?, refreshedAuthorizationHeader: String) {
+        self.currentUser = user
+        self.authorizationHeaderValue = initialAuthorizationHeader
+        self.refreshedAuthorizationHeader = refreshedAuthorizationHeader
+    }
+
+    func restoreSession() async throws -> AppUser? {
+        restoreSessionCallCount += 1
+        authorizationHeaderValue = refreshedAuthorizationHeader
+        return currentUser
+    }
+
+    func signIn(email: String, password: String) async throws -> AppUser { throw AppError.network("Unused") }
+    func signUp(email: String, password: String) async throws -> AppUser { throw AppError.network("Unused") }
+    func deleteAccount(currentPassword: String) async throws {}
+    func signOut() async throws {}
+    func authorizationHeader() -> String? { authorizationHeaderValue }
 }
 
 private final class MockURLProtocol: URLProtocol {
