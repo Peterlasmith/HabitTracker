@@ -1188,6 +1188,94 @@ final class HabitTrackerTests: XCTestCase {
         XCTAssertNil(authService.currentUser)
         XCTAssertNil(try sessionStore.read())
     }
+
+    @MainActor
+    func testDeleteAccountReturnsToAuthenticationAfterDeletedConfirmation() async throws {
+        let sessionStore = SessionStore(
+            service: "HabitTracker.auth.tests.\(UUID().uuidString)",
+            account: "supabase.session"
+        )
+        defer { try? sessionStore.clear() }
+
+        let defaults = UserDefaults(suiteName: UUID().uuidString) ?? .standard
+        defaults.set(true, forKey: "hasCompletedOnboarding")
+
+        let localStore = LocalStore(
+            baseURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        )
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let urlSession = URLSession(configuration: configuration)
+        let supabaseURL = URL(string: "https://example.supabase.co")!
+        let userId = UUID()
+
+        MockURLProtocol.requestHandler = { request in
+            switch (request.url?.path, request.url?.query) {
+            case ("/auth/v1/token", "grant_type=password"):
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data(
+                        """
+                        {
+                          "access_token": "session-access-token",
+                          "refresh_token": "session-refresh-token",
+                          "user": {
+                            "id": "\(userId.uuidString.lowercased())",
+                            "email": "test@example.com"
+                          }
+                        }
+                        """.utf8
+                    )
+                )
+
+            case ("/rest/v1/rpc/delete_my_account", _):
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data()
+                )
+
+            default:
+                XCTFail("Unexpected request: \(request.url?.absoluteString ?? "nil")")
+                return (
+                    HTTPURLResponse(url: supabaseURL, statusCode: 500, httpVersion: nil, headerFields: nil)!,
+                    Data()
+                )
+            }
+        }
+
+        let authService = SupabaseAuthService(
+            configuration: SupabaseConfiguration(url: supabaseURL, anonKey: "anon-key"),
+            urlSession: urlSession,
+            sessionStore: sessionStore
+        )
+
+        _ = try await authService.signIn(email: "test@example.com", password: "correct-horse")
+
+        let environment = AppEnvironment(
+            authService: authService,
+            reminderService: NoopReminderService(),
+            widgetSyncService: WidgetSyncService(),
+            analyticsService: AnalyticsService(),
+            defaults: defaults,
+            localStore: localStore,
+            habitRepository: StubHabitRepository(),
+            checkInRepository: StubCheckInRepository()
+        )
+
+        environment.currentUser = AppUser(id: userId, email: "test@example.com")
+
+        let didDelete = await environment.deleteAccount(currentPassword: "correct-horse")
+
+        XCTAssertTrue(didDelete)
+        XCTAssertEqual(environment.phase, .accountDeleted)
+        XCTAssertEqual(environment.recentlyDeletedAccountEmail, "test@example.com")
+
+        try? await Task.sleep(for: .seconds(2.1))
+
+        XCTAssertEqual(environment.phase, .authentication)
+        XCTAssertNil(environment.currentUser)
+        XCTAssertNil(environment.recentlyDeletedAccountEmail)
+    }
 }
 
 private struct FailingRemoteDataSource: HabitRemoteDataSource {

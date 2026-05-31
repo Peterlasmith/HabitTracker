@@ -3,7 +3,7 @@ import SwiftUI
 
 @MainActor
 final class AppEnvironment: ObservableObject {
-    enum Phase {
+    enum Phase: Equatable {
         case launching
         case onboarding
         case authentication
@@ -356,8 +356,6 @@ final class AppEnvironment: ObservableObject {
         let didCompleteOnboarding = self.defaults.bool(forKey: self.onboardingKey)
         if !didCompleteOnboarding {
             await MainActor.run { self.phase = .onboarding }
-        } else if self.phase == .accountDeleted {
-            return
         } else if self.currentUser == nil {
             await MainActor.run { self.phase = .authentication }
         } else {
