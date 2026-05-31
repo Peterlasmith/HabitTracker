@@ -16,6 +16,8 @@ protocol AuthService: AnyObject {
 final class SupabaseAuthService: ObservableObject, AuthService {
     @Published private(set) var currentUser: AppUser?
 
+    private struct DeleteAccountRPCUnavailable: Error {}
+
     private let configuration: SupabaseConfiguration
     private let urlSession: URLSession
     private let sessionStore: SessionStore
@@ -132,18 +134,11 @@ final class SupabaseAuthService: ObservableObject, AuthService {
             throw AppError.network("Your session expired. Sign in again to delete your account.")
         }
 
-        var request = URLRequest(url: endpointURL(path: "functions/v1/delete-account", queryItems: []))
-        request.httpMethod = "POST"
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "current_password": trimmedPassword
-        ])
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue(configuration.anonKey, forHTTPHeaderField: "apikey")
-        request.setValue(authHeader, forHTTPHeaderField: "Authorization")
-
-        let (data, response) = try await urlSession.data(for: request)
-        try validate(response: response, data: data)
+        do {
+            try await deleteAccountViaRPC(authHeader: authHeader)
+        } catch is DeleteAccountRPCUnavailable {
+            try await deleteAccountViaEdgeFunction(authHeader: authHeader, currentPassword: trimmedPassword)
+        }
 
         currentUser = nil
         try sessionStore.clear()
@@ -153,6 +148,57 @@ final class SupabaseAuthService: ObservableObject, AuthService {
         guard let session = try? sessionStore.read() else { return nil }
         let token = session.accessToken
         return "Bearer \(token)"
+    }
+
+    private func deleteAccountViaRPC(authHeader: String) async throws {
+        var request = URLRequest(url: endpointURL(path: "rest/v1/rpc/delete_my_account", queryItems: []))
+        request.httpMethod = "POST"
+        request.httpBody = Data("{}".utf8)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(configuration.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue(authHeader, forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await urlSession.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AppError.network("Missing HTTP response.")
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let message = (try? JSONDecoder.supabase.decode(SupabaseError.self, from: data).bestMessage)
+                ?? String(data: data, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .nilIfEmpty
+                ?? HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode)
+
+            if httpResponse.statusCode == 404, isDeleteAccountRPCUnavailableMessage(message) {
+                throw DeleteAccountRPCUnavailable()
+            }
+
+            throw AppError.network(normalizedErrorMessage(message, statusCode: httpResponse.statusCode))
+        }
+    }
+
+    private func deleteAccountViaEdgeFunction(authHeader: String, currentPassword: String) async throws {
+        var request = URLRequest(url: endpointURL(path: "functions/v1/delete-account", queryItems: []))
+        request.httpMethod = "POST"
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "current_password": currentPassword
+        ])
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(configuration.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue(authHeader, forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await urlSession.data(for: request)
+        try validate(response: response, data: data)
+    }
+
+    private func isDeleteAccountRPCUnavailableMessage(_ message: String) -> Bool {
+        let lowercased = message.lowercased()
+        return lowercased.contains("could not find the function")
+            || lowercased.contains("function public.delete_my_account")
+            || lowercased.contains("schema cache")
     }
 
     private func fetchCurrentUser(accessToken: String) async throws -> AppUser {
@@ -285,6 +331,13 @@ final class SupabaseAuthService: ObservableObject, AuthService {
 
         if lowercased.contains("unable to validate email address") || lowercased.contains("invalid email") {
             return "Enter a valid email address and try again."
+        }
+
+        if lowercased.contains("requested function was not found")
+            || lowercased.contains("could not find the function")
+            || lowercased.contains("schema cache")
+        {
+            return "Account deletion isn't enabled on this Supabase project yet. Apply the latest Supabase schema/backend updates and try again."
         }
 
         return normalized

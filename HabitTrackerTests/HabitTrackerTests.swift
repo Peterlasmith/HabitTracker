@@ -1047,6 +1047,147 @@ final class HabitTrackerTests: XCTestCase {
         XCTAssertEqual(storedSession?.accessToken, "fresh-access-token")
         XCTAssertEqual(storedSession?.refreshToken, "fresh-refresh-token")
     }
+
+    @MainActor
+    func testDeleteAccountUsesRPCAndClearsSession() async throws {
+        let sessionStore = SessionStore(
+            service: "HabitTracker.auth.tests.\(UUID().uuidString)",
+            account: "supabase.session"
+        )
+        defer { try? sessionStore.clear() }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let urlSession = URLSession(configuration: configuration)
+        let supabaseURL = URL(string: "https://example.supabase.co")!
+        var rpcRequestCount = 0
+
+        MockURLProtocol.requestHandler = { request in
+            switch (request.url?.path, request.url?.query) {
+            case ("/auth/v1/token", "grant_type=password"):
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data(
+                        """
+                        {
+                          "access_token": "session-access-token",
+                          "refresh_token": "session-refresh-token",
+                          "user": {
+                            "id": "\(UUID().uuidString.lowercased())",
+                            "email": "test@example.com"
+                          }
+                        }
+                        """.utf8
+                    )
+                )
+
+            case ("/rest/v1/rpc/delete_my_account", _):
+                rpcRequestCount += 1
+                XCTAssertEqual(request.httpMethod, "POST")
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer session-access-token")
+                XCTAssertEqual(request.value(forHTTPHeaderField: "apikey"), "anon-key")
+                XCTAssertEqual(String(data: request.httpBody ?? Data(), encoding: .utf8), "{}")
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data()
+                )
+
+            default:
+                XCTFail("Unexpected request: \(request.url?.absoluteString ?? "nil")")
+                return (
+                    HTTPURLResponse(url: supabaseURL, statusCode: 500, httpVersion: nil, headerFields: nil)!,
+                    Data()
+                )
+            }
+        }
+
+        let authService = SupabaseAuthService(
+            configuration: SupabaseConfiguration(url: supabaseURL, anonKey: "anon-key"),
+            urlSession: urlSession,
+            sessionStore: sessionStore
+        )
+
+        _ = try await authService.signIn(email: "test@example.com", password: "correct-horse")
+        try await authService.deleteAccount(currentPassword: "correct-horse")
+
+        XCTAssertEqual(rpcRequestCount, 1)
+        XCTAssertNil(authService.currentUser)
+        XCTAssertNil(try sessionStore.read())
+    }
+
+    @MainActor
+    func testDeleteAccountFallsBackToEdgeFunctionWhenRPCIsUnavailable() async throws {
+        let sessionStore = SessionStore(
+            service: "HabitTracker.auth.tests.\(UUID().uuidString)",
+            account: "supabase.session"
+        )
+        defer { try? sessionStore.clear() }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let urlSession = URLSession(configuration: configuration)
+        let supabaseURL = URL(string: "https://example.supabase.co")!
+        var edgeFunctionRequestCount = 0
+
+        MockURLProtocol.requestHandler = { request in
+            switch (request.url?.path, request.url?.query) {
+            case ("/auth/v1/token", "grant_type=password"):
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data(
+                        """
+                        {
+                          "access_token": "session-access-token",
+                          "refresh_token": "session-refresh-token",
+                          "user": {
+                            "id": "\(UUID().uuidString.lowercased())",
+                            "email": "test@example.com"
+                          }
+                        }
+                        """.utf8
+                    )
+                )
+
+            case ("/rest/v1/rpc/delete_my_account", _):
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!,
+                    #"{"message":"Could not find the function public.delete_my_account() in the schema cache"}"#.data(using: .utf8)!
+                )
+
+            case ("/functions/v1/delete-account", _):
+                edgeFunctionRequestCount += 1
+                XCTAssertEqual(request.httpMethod, "POST")
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer session-access-token")
+                let body = try XCTUnwrap(request.httpBody)
+                let json = try JSONSerialization.jsonObject(with: body) as? [String: String]
+                XCTAssertEqual(json?["current_password"], "correct-horse")
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data()
+                )
+
+            default:
+                XCTFail("Unexpected request: \(request.url?.absoluteString ?? "nil")")
+                return (
+                    HTTPURLResponse(url: supabaseURL, statusCode: 500, httpVersion: nil, headerFields: nil)!,
+                    Data()
+                )
+            }
+        }
+
+        let authService = SupabaseAuthService(
+            configuration: SupabaseConfiguration(url: supabaseURL, anonKey: "anon-key"),
+            urlSession: urlSession,
+            sessionStore: sessionStore
+        )
+
+        _ = try await authService.signIn(email: "test@example.com", password: "correct-horse")
+        try await authService.deleteAccount(currentPassword: "correct-horse")
+
+        XCTAssertEqual(edgeFunctionRequestCount, 1)
+        XCTAssertNil(authService.currentUser)
+        XCTAssertNil(try sessionStore.read())
+    }
 }
 
 private struct FailingRemoteDataSource: HabitRemoteDataSource {

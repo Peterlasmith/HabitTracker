@@ -33,6 +33,7 @@ Expected columns are defined in the app DTOs in `HabitTracker/Repositories/Habit
 2. In SQL Editor, run `supabase/schema.sql`.
 3. In Authentication > Providers > Email, disable email confirmation so sign-up returns an active session for the current app flow.
 4. Keep using the project's publishable key in `SUPABASE_ANON_KEY` for this app's existing REST configuration.
+5. If your database was initialized before May 31, 2026, also run `supabase/20260531_add_delete_my_account_rpc.sql` so the in-app account deletion flow can remove the signed-in user.
 
 ## Notes
 
