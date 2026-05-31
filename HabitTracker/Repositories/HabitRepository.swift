@@ -80,8 +80,12 @@ actor DefaultHabitRepository: HabitRepository {
             .filter { !deletedHabitIDs.contains($0.id) }
 
         for deletedHabit in deletedHabits {
-            try? await performAuthorizedRemoteRequest { [self] authHeader in
-                try await self.remote.deleteHabit(deletedHabit.habit, authHeader: authHeader)
+            do {
+                _ = try await performAuthorizedRemoteRequest { [self] authHeader in
+                    try await self.remote.deleteHabit(deletedHabit.habit, authHeader: authHeader)
+                }
+            } catch {
+                // Keep the tombstone so we can retry the remote delete on the next sync.
             }
         }
 
@@ -169,7 +173,7 @@ actor DefaultCheckInRepository: CheckInRepository {
             .filter { !deletedHabitIDs.contains($0.habitId) }
 
         for completion in localCompletions {
-            try? await performAuthorizedRemoteRequest { [self] authHeader in
+            _ = try? await performAuthorizedRemoteRequest { [self] authHeader in
                 try await self.remote.upsertCompletion(completion, authHeader: authHeader)
             }
         }
