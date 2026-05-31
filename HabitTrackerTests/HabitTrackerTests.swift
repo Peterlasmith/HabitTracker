@@ -444,6 +444,45 @@ final class HabitTrackerTests: XCTestCase {
         XCTAssertEqual(savedHabits.map(\.id), [habit.id])
     }
 
+    func testDeletingHabitRestoresLocalStateWhenRemoteDeleteAffectsZeroRows() async throws {
+        let baseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let localStore = LocalStore(baseURL: baseURL)
+        let repository = await MainActor.run {
+            DefaultHabitRepository(
+                localStore: localStore,
+                remote: ZeroRowDeleteRemoteDataSource(),
+                authService: MockAuthService(authorizationHeaderValue: "Bearer test-token")
+            )
+        }
+
+        let habit = Habit(
+            id: UUID(),
+            userId: UUID(),
+            name: "Meditate",
+            emojiOrIcon: "🧘",
+            color: .rose,
+            schedule: .daily,
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: .now
+        )
+        try await localStore.writeHabits([habit])
+
+        do {
+            try await repository.deleteHabit(habit)
+            XCTFail("Expected zero-row remote delete to fail")
+        } catch {
+            XCTAssertEqual(
+                error as? AppError,
+                .network("Supabase did not confirm deleting this habit. Check your latest schema/policies and try again.")
+            )
+        }
+
+        let savedHabits = try await repository.fetchHabits()
+        XCTAssertEqual(savedHabits.map(\.id), [habit.id])
+    }
+
     func testSyncDoesNotRestoreDeletedHabitWhileRemoteDeleteIsStillStale() async throws {
         let baseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let localStore = LocalStore(baseURL: baseURL)
@@ -1015,7 +1054,7 @@ private struct FailingRemoteDataSource: HabitRemoteDataSource {
     func upsertHabit(_ habit: Habit, authHeader: String?) async throws {
         throw AppError.network("Remote unavailable")
     }
-    func deleteHabit(_ habit: Habit, authHeader: String?) async throws {
+    func deleteHabit(_ habit: Habit, authHeader: String?) async throws -> Bool {
         throw AppError.network("Remote unavailable")
     }
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] { [] }
@@ -1027,7 +1066,15 @@ private struct FailingRemoteDataSource: HabitRemoteDataSource {
 private struct SuccessfulRemoteDataSource: HabitRemoteDataSource {
     func fetchHabits(authHeader: String?) async throws -> [Habit] { [] }
     func upsertHabit(_ habit: Habit, authHeader: String?) async throws {}
-    func deleteHabit(_ habit: Habit, authHeader: String?) async throws {}
+    func deleteHabit(_ habit: Habit, authHeader: String?) async throws -> Bool { true }
+    func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] { [] }
+    func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws {}
+}
+
+private struct ZeroRowDeleteRemoteDataSource: HabitRemoteDataSource {
+    func fetchHabits(authHeader: String?) async throws -> [Habit] { [] }
+    func upsertHabit(_ habit: Habit, authHeader: String?) async throws {}
+    func deleteHabit(_ habit: Habit, authHeader: String?) async throws -> Bool { false }
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] { [] }
     func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws {}
 }
@@ -1048,7 +1095,7 @@ private actor EventuallyConsistentRemoteDataSource: HabitRemoteDataSource {
         // does not necessarily include the record yet.
     }
 
-    func deleteHabit(_ habit: Habit, authHeader: String?) async throws {}
+    func deleteHabit(_ habit: Habit, authHeader: String?) async throws -> Bool { true }
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] { [] }
     func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws {}
 }
@@ -1068,11 +1115,12 @@ private actor BlockingRemoteDataSource: HabitRemoteDataSource {
         }
     }
 
-    func deleteHabit(_ habit: Habit, authHeader: String?) async throws {
+    func deleteHabit(_ habit: Habit, authHeader: String?) async throws -> Bool {
         didStartDelete = true
         await withCheckedContinuation { continuation in
             self.deleteContinuation = continuation
         }
+        return true
     }
 
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] { [] }
@@ -1121,11 +1169,12 @@ private actor ExpiringTokenRemoteDataSource: HabitRemoteDataSource {
         }
     }
 
-    func deleteHabit(_ habit: Habit, authHeader: String?) async throws {
+    func deleteHabit(_ habit: Habit, authHeader: String?) async throws -> Bool {
         headers.append(authHeader)
         if authHeader == "Bearer expired-access-token" {
             throw AppError.network("Invalid JWT")
         }
+        return true
     }
 
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] { [] }
@@ -1145,7 +1194,7 @@ private actor DuplicateCompletionRemoteDataSource: HabitRemoteDataSource {
 
     func fetchHabits(authHeader: String?) async throws -> [Habit] { [] }
     func upsertHabit(_ habit: Habit, authHeader: String?) async throws {}
-    func deleteHabit(_ habit: Habit, authHeader: String?) async throws {}
+    func deleteHabit(_ habit: Habit, authHeader: String?) async throws -> Bool { true }
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] { completions }
     func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws {}
 }

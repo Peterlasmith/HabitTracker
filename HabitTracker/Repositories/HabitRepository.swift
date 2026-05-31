@@ -16,7 +16,7 @@ protocol CheckInRepository {
 protocol HabitRemoteDataSource: Sendable {
     func fetchHabits(authHeader: String?) async throws -> [Habit]
     func upsertHabit(_ habit: Habit, authHeader: String?) async throws
-    func deleteHabit(_ habit: Habit, authHeader: String?) async throws
+    func deleteHabit(_ habit: Habit, authHeader: String?) async throws -> Bool
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion]
     func upsertCompletion(_ completion: HabitCompletion, authHeader: String?) async throws
 }
@@ -60,8 +60,11 @@ actor DefaultHabitRepository: HabitRepository {
         try await localStore.writeDeletedHabits(updatedDeletedHabits)
 
         do {
-            try await performAuthorizedRemoteRequest { [self] authHeader in
+            let deletedRemotely = try await performAuthorizedRemoteRequest { [self] authHeader in
                 try await self.remote.deleteHabit(habit, authHeader: authHeader)
+            }
+            guard deletedRemotely else {
+                throw AppError.network("Supabase did not confirm deleting this habit. Check your latest schema/policies and try again.")
             }
         } catch {
             try? await localStore.writeHabits(previousHabits)
@@ -384,8 +387,8 @@ struct SupabaseHabitRemoteDataSource {
         ) as [HabitRow]
     }
 
-    func deleteHabit(_ habit: Habit, authHeader: String?) async throws {
-        _ = try await performRequest(
+    func deleteHabit(_ habit: Habit, authHeader: String?) async throws -> Bool {
+        let deletedRows: [HabitRow] = try await performRequest(
             path: "rest/v1/habits",
             queryItems: [
                 URLQueryItem(name: "id", value: "eq.\(habit.id.uuidString.lowercased())"),
@@ -393,7 +396,8 @@ struct SupabaseHabitRemoteDataSource {
             ],
             method: "DELETE",
             authHeader: authHeader
-        ) as [HabitRow]
+        )
+        return deletedRows.contains { $0.id == habit.id }
     }
 
     func fetchCompletions(authHeader: String?) async throws -> [HabitCompletion] {
