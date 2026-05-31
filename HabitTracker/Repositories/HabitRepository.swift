@@ -63,7 +63,6 @@ actor DefaultHabitRepository: HabitRepository {
             try await performAuthorizedRemoteRequest { [self] authHeader in
                 try await self.remote.deleteHabit(habit, authHeader: authHeader)
             }
-            try await localStore.writeDeletedHabits(previousDeletedHabits.filter { $0.habitId != habit.id })
         } catch {
             try? await localStore.writeHabits(previousHabits)
             try? await localStore.writeDeletedHabits(previousDeletedHabits)

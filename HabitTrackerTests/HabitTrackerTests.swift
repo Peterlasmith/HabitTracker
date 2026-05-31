@@ -373,6 +373,41 @@ final class HabitTrackerTests: XCTestCase {
         XCTAssertTrue(deleteFinishedAfterUnblock)
     }
 
+    func testDeletingHabitKeepsDeleteTombstoneUntilRemoteStopsReturningIt() async throws {
+        let baseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let localStore = LocalStore(baseURL: baseURL)
+        let remote = EventuallyConsistentRemoteDataSource()
+        let repository = await MainActor.run {
+            DefaultHabitRepository(
+                localStore: localStore,
+                remote: remote,
+                authService: MockAuthService(authorizationHeaderValue: "Bearer test-token")
+            )
+        }
+
+        let habit = Habit(
+            id: UUID(),
+            userId: UUID(),
+            name: "Meditate",
+            emojiOrIcon: "🧘",
+            color: .rose,
+            schedule: .daily,
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: .now
+        )
+        try await localStore.writeHabits([habit])
+
+        try await repository.deleteHabit(habit)
+
+        XCTAssertTrue(try await localStore.readHabits().isEmpty)
+        XCTAssertEqual(
+            try await localStore.readDeletedHabits(),
+            [DeletedHabitRecord(habitId: habit.id, userId: habit.userId)]
+        )
+    }
+
     func testDeletingHabitRestoresLocalStateWhenRemoteDeleteFails() async throws {
         let baseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let localStore = LocalStore(baseURL: baseURL)
