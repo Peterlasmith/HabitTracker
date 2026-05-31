@@ -409,6 +409,42 @@ final class HabitTrackerTests: XCTestCase {
         XCTAssertEqual(savedHabits.map(\.id), [habit.id])
     }
 
+    func testSyncDoesNotRestoreDeletedHabitWhileRemoteDeleteIsStillStale() async throws {
+        let baseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let localStore = LocalStore(baseURL: baseURL)
+        let remote = EventuallyConsistentRemoteDataSource()
+        let repository = await MainActor.run {
+            DefaultHabitRepository(
+                localStore: localStore,
+                remote: remote,
+                authService: MockAuthService(authorizationHeaderValue: "Bearer test-token")
+            )
+        }
+
+        let habit = Habit(
+            id: UUID(),
+            userId: UUID(),
+            name: "Stretch",
+            emojiOrIcon: "🧘",
+            color: .rose,
+            schedule: .daily,
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: .now
+        )
+
+        try await localStore.writeHabits([])
+        try await localStore.writeDeletedHabits([DeletedHabitRecord(habitId: habit.id, userId: habit.userId)])
+        await remote.setHabits([habit])
+
+        let syncedHabits = try await repository.sync()
+
+        XCTAssertTrue(syncedHabits.isEmpty)
+        XCTAssertTrue(try await localStore.readHabits().isEmpty)
+        XCTAssertEqual(try await localStore.readDeletedHabits(), [DeletedHabitRecord(habitId: habit.id, userId: habit.userId)])
+    }
+
     func testSavingUpdatedHabitDoesNotChangeOthersWithMatchingCreationTime() async throws {
         let baseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let localStore = LocalStore(baseURL: baseURL)
@@ -963,6 +999,10 @@ private struct SuccessfulRemoteDataSource: HabitRemoteDataSource {
 
 private actor EventuallyConsistentRemoteDataSource: HabitRemoteDataSource {
     private var fetchedHabits: [Habit] = []
+
+    func setHabits(_ habits: [Habit]) {
+        fetchedHabits = habits
+    }
 
     func fetchHabits(authHeader: String?) async throws -> [Habit] {
         fetchedHabits

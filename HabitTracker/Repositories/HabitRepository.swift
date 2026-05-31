@@ -51,22 +51,37 @@ actor DefaultHabitRepository: HabitRepository {
 
     func deleteHabit(_ habit: Habit) async throws {
         let previousHabits = try await localStore.readHabits()
+        let previousDeletedHabits = try await localStore.readDeletedHabits()
         var updatedHabits = previousHabits
         updatedHabits.removeAll { $0.id == habit.id }
+        var updatedDeletedHabits = previousDeletedHabits.filter { $0.habitId != habit.id }
+        updatedDeletedHabits.append(DeletedHabitRecord(habitId: habit.id, userId: habit.userId))
         try await localStore.writeHabits(updatedHabits)
+        try await localStore.writeDeletedHabits(updatedDeletedHabits)
 
         do {
             try await performAuthorizedRemoteRequest { [self] authHeader in
                 try await self.remote.deleteHabit(habit, authHeader: authHeader)
             }
+            try await localStore.writeDeletedHabits(previousDeletedHabits.filter { $0.habitId != habit.id })
         } catch {
             try? await localStore.writeHabits(previousHabits)
+            try? await localStore.writeDeletedHabits(previousDeletedHabits)
             throw error
         }
     }
 
     func sync() async throws -> [Habit] {
+        var deletedHabits = try await localStore.readDeletedHabits()
+        let deletedHabitIDs = Set(deletedHabits.map(\.habitId))
         let localHabits = try await localStore.readHabits()
+            .filter { !deletedHabitIDs.contains($0.id) }
+
+        for deletedHabit in deletedHabits {
+            try? await performAuthorizedRemoteRequest { [self] authHeader in
+                try await self.remote.deleteHabit(deletedHabit.habit, authHeader: authHeader)
+            }
+        }
 
         for habit in localHabits {
             try? await performAuthorizedRemoteRequest { [self] authHeader in
@@ -77,8 +92,13 @@ actor DefaultHabitRepository: HabitRepository {
         let remoteHabits = try await performAuthorizedRemoteRequest { [self] authHeader in
             try await self.remote.fetchHabits(authHeader: authHeader)
         }
+        let remoteHabitIDs = Set(remoteHabits.map(\.id))
+        deletedHabits.removeAll { !remoteHabitIDs.contains($0.habitId) }
+        let pendingDeletedHabitIDs = Set(deletedHabits.map(\.habitId))
         let mergedHabits = mergeHabits(localHabits, with: remoteHabits)
+            .filter { !pendingDeletedHabitIDs.contains($0.id) }
         try await localStore.writeHabits(mergedHabits)
+        try await localStore.writeDeletedHabits(deletedHabits)
         return mergedHabits
     }
 
@@ -142,7 +162,9 @@ actor DefaultCheckInRepository: CheckInRepository {
     }
 
     func sync() async throws -> [HabitCompletion] {
+        let deletedHabitIDs = Set(try await localStore.readDeletedHabits().map(\.habitId))
         let localCompletions = try await localStore.readCompletions()
+            .filter { !deletedHabitIDs.contains($0.habitId) }
 
         for completion in localCompletions {
             try? await performAuthorizedRemoteRequest { [self] authHeader in
@@ -153,7 +175,10 @@ actor DefaultCheckInRepository: CheckInRepository {
         let remoteCompletions = try await performAuthorizedRemoteRequest { [self] authHeader in
             try await self.remote.fetchCompletions(authHeader: authHeader)
         }
-        let mergedCompletions = mergeCompletions(localCompletions, with: remoteCompletions)
+        let mergedCompletions = mergeCompletions(
+            localCompletions,
+            with: remoteCompletions.filter { !deletedHabitIDs.contains($0.habitId) }
+        )
         try await localStore.writeCompletions(mergedCompletions)
         return mergedCompletions
     }
@@ -273,6 +298,17 @@ actor LocalStore {
         try await write(habits, fileName: "habits.json")
     }
 
+    func readDeletedHabits() async throws -> [DeletedHabitRecord] {
+        let url = baseURL.appending(path: "deleted-habits.json")
+        guard fileManager.fileExists(atPath: url.path()) else { return [] }
+        let data = try Data(contentsOf: url)
+        return try decoder.decode([DeletedHabitRecord].self, from: data)
+    }
+
+    func writeDeletedHabits(_ deletedHabits: [DeletedHabitRecord]) async throws {
+        try await write(deletedHabits, fileName: "deleted-habits.json")
+    }
+
     func readCompletions() async throws -> [HabitCompletion] {
         let url = baseURL.appending(path: "completions.json")
         guard fileManager.fileExists(atPath: url.path()) else { return [] }
@@ -299,6 +335,26 @@ actor LocalStore {
     private func ensureBaseDirectory() throws {
         guard !fileManager.fileExists(atPath: baseURL.path()) else { return }
         try fileManager.createDirectory(at: baseURL, withIntermediateDirectories: true)
+    }
+}
+
+struct DeletedHabitRecord: Codable, Equatable {
+    let habitId: UUID
+    let userId: UUID
+
+    var habit: Habit {
+        Habit(
+            id: habitId,
+            userId: userId,
+            name: "",
+            emojiOrIcon: "",
+            color: .teal,
+            schedule: .daily,
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: .distantPast
+        )
     }
 }
 

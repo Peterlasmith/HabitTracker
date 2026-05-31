@@ -208,7 +208,7 @@ final class AppEnvironment: ObservableObject {
         let didDelete = await self.runBusyTask { [updatedHabitsCopy, updatedCompletionsCopy, habitCopy] in
             try await self.habitRepository.deleteHabit(habitCopy)
             try await self.reminderService.rescheduleNotifications(for: updatedHabitsCopy)
-            await self.widgetSyncService.publish(habits: updatedHabitsCopy, completions: updatedCompletionsCopy)
+            self.widgetSyncService.publish(habits: updatedHabitsCopy, completions: updatedCompletionsCopy)
             return true
         } ?? false
 
@@ -288,11 +288,14 @@ final class AppEnvironment: ObservableObject {
         async let syncedCompletions = self.checkInRepository.sync()
         let habits = try await syncedHabits
         let completions = try await syncedCompletions
+        let habitIDs = Set(habits.map(\.id))
+        let filteredCompletions = self.normalizedCompletions(completions).filter { habitIDs.contains($0.habitId) }
         await MainActor.run {
             self.habits = habits
-            self.completions = self.normalizedCompletions(completions)
+            self.completions = filteredCompletions
         }
-        self.widgetSyncService.publish(habits: habits, completions: self.normalizedCompletions(completions))
+        try? await self.localStore.writeCompletions(filteredCompletions)
+        self.widgetSyncService.publish(habits: habits, completions: filteredCompletions)
     }
 
     private func clearPersistedUserState() async {
