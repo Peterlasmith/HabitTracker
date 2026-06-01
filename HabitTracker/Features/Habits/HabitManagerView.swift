@@ -4,7 +4,7 @@ struct HabitManagerView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var environment: AppEnvironment
 
-    @State private var selectedHabit: Habit?
+    @State private var selectedHabitID: Habit.ID?
     @State private var habitPendingDeletion: Habit?
 
     private var habits: [Habit] {
@@ -55,9 +55,18 @@ struct HabitManagerView: View {
                 Button("Done") { dismiss() }
             }
         }
-        .sheet(item: $selectedHabit) { habit in
+        .sheet(
+            isPresented: Binding(
+                get: { selectedHabitID != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        selectedHabitID = nil
+                    }
+                }
+            )
+        ) {
             NavigationStack {
-                HabitEditorView(existingHabit: habit)
+                HabitEditorView(existingHabitID: selectedHabitID)
             }
         }
         .confirmationDialog(
@@ -126,7 +135,7 @@ struct HabitManagerView: View {
 
     private func editButton(for habit: Habit) -> some View {
         Button("Edit") {
-            selectedHabit = habit
+            selectedHabitID = habit.id
         }
         .font(AppTheme.sans(size: 13, weight: .semibold))
         .foregroundStyle(AppTheme.textPrimary)

@@ -401,11 +401,10 @@ final class HabitTrackerTests: XCTestCase {
 
         try await repository.deleteHabit(habit)
 
-        XCTAssertTrue(try await localStore.readHabits().isEmpty)
-        XCTAssertEqual(
-            try await localStore.readDeletedHabits(),
-            [DeletedHabitRecord(habitId: habit.id, userId: habit.userId)]
-        )
+        let persistedHabits = try await localStore.readHabits()
+        let deletedHabits = try await localStore.readDeletedHabits()
+        XCTAssertTrue(persistedHabits.isEmpty)
+        XCTAssertEqual(deletedHabits, [DeletedHabitRecord(habitId: habit.id, userId: habit.userId)])
     }
 
     func testDeletingHabitRestoresLocalStateWhenRemoteDeleteFails() async throws {
@@ -515,8 +514,10 @@ final class HabitTrackerTests: XCTestCase {
         let syncedHabits = try await repository.sync()
 
         XCTAssertTrue(syncedHabits.isEmpty)
-        XCTAssertTrue(try await localStore.readHabits().isEmpty)
-        XCTAssertEqual(try await localStore.readDeletedHabits(), [DeletedHabitRecord(habitId: habit.id, userId: habit.userId)])
+        let persistedHabits = try await localStore.readHabits()
+        let deletedHabits = try await localStore.readDeletedHabits()
+        XCTAssertTrue(persistedHabits.isEmpty)
+        XCTAssertEqual(deletedHabits, [DeletedHabitRecord(habitId: habit.id, userId: habit.userId)])
     }
 
     func testSavingUpdatedHabitDoesNotChangeOthersWithMatchingCreationTime() async throws {
@@ -827,6 +828,193 @@ final class HabitTrackerTests: XCTestCase {
 
         XCTAssertEqual(environment.completion(for: habit, on: .now)?.count, 1)
         XCTAssertEqual(environment.completionHistory(for: habit).count, 1)
+    }
+
+    @MainActor
+    func testEditHabitPersistsLocallyWhenRemoteSaveFails() async throws {
+        let localStore = LocalStore(
+            baseURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        )
+        let habitRepository = RecoveringStubHabitRepository(saveFailuresRemaining: 1)
+        let environment = AppEnvironment(
+            authService: SupabaseAuthService(),
+            reminderService: NoopReminderService(),
+            widgetSyncService: WidgetSyncService(),
+            analyticsService: AnalyticsService(),
+            defaults: UserDefaults(suiteName: UUID().uuidString) ?? .standard,
+            localStore: localStore,
+            habitRepository: habitRepository,
+            checkInRepository: StubCheckInRepository()
+        )
+
+        let user = AppUser(id: UUID(), email: "test@example.com")
+        let originalHabit = Habit(
+            id: UUID(),
+            userId: user.id,
+            name: "Stretch",
+            emojiOrIcon: "🧘",
+            color: .rose,
+            schedule: .daily,
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: .now
+        )
+        let editedHabit = Habit(
+            id: originalHabit.id,
+            userId: originalHabit.userId,
+            name: "Long Stretch",
+            emojiOrIcon: originalHabit.emojiOrIcon,
+            color: originalHabit.color,
+            schedule: .weekdays([.monday, .wednesday, .friday]),
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: DateComponents(hour: 7, minute: 45),
+            createdAt: originalHabit.createdAt
+        )
+
+        environment.currentUser = user
+        environment.habits = [originalHabit]
+        try await localStore.writeHabits([originalHabit])
+
+        let outcome = try await environment.createOrUpdateHabit(editedHabit)
+
+        XCTAssertEqual(outcome, .savedLocally)
+        XCTAssertEqual(environment.habit(id: editedHabit.id)?.name, editedHabit.name)
+        XCTAssertEqual(environment.habit(id: editedHabit.id)?.schedule, editedHabit.schedule)
+
+        let persistedHabits = try await localStore.readHabits()
+        XCTAssertEqual(persistedHabits.first?.name, editedHabit.name)
+        XCTAssertEqual(persistedHabits.first?.schedule, editedHabit.schedule)
+
+        let didAttemptRemoteSave = await habitRepository.waitForSaveCalls(1)
+        let didMarkPendingSync = await waitUntil {
+            await MainActor.run { environment.hasPendingHabitSync }
+        }
+        XCTAssertTrue(didAttemptRemoteSave)
+        XCTAssertTrue(didMarkPendingSync)
+        XCTAssertEqual(environment.errorMessage, "Saved on this device. We'll sync when you're back online.")
+        XCTAssertEqual(environment.habit(id: editedHabit.id)?.name, editedHabit.name)
+    }
+
+    @MainActor
+    func testRetryPendingHabitSyncClearsPendingState() async throws {
+        let localStore = LocalStore(
+            baseURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        )
+        let habitRepository = RecoveringStubHabitRepository(saveFailuresRemaining: 1)
+        let environment = AppEnvironment(
+            authService: SupabaseAuthService(),
+            reminderService: NoopReminderService(),
+            widgetSyncService: WidgetSyncService(),
+            analyticsService: AnalyticsService(),
+            defaults: UserDefaults(suiteName: UUID().uuidString) ?? .standard,
+            localStore: localStore,
+            habitRepository: habitRepository,
+            checkInRepository: StubCheckInRepository()
+        )
+
+        let user = AppUser(id: UUID(), email: "test@example.com")
+        let originalHabit = Habit(
+            id: UUID(),
+            userId: user.id,
+            name: "Read",
+            emojiOrIcon: "📚",
+            color: .teal,
+            schedule: .daily,
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: .now
+        )
+        let editedHabit = Habit(
+            id: originalHabit.id,
+            userId: originalHabit.userId,
+            name: "Read 20 Minutes",
+            emojiOrIcon: originalHabit.emojiOrIcon,
+            color: originalHabit.color,
+            schedule: originalHabit.schedule,
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: originalHabit.createdAt
+        )
+
+        environment.currentUser = user
+        environment.habits = [originalHabit]
+        try await localStore.writeHabits([originalHabit])
+
+        _ = try await environment.createOrUpdateHabit(editedHabit)
+
+        let didMarkPendingSync = await waitUntil {
+            await MainActor.run { environment.hasPendingHabitSync }
+        }
+        XCTAssertTrue(didMarkPendingSync)
+
+        environment.retryPendingHabitSyncIfNeeded()
+
+        let didRetryPendingSync = await habitRepository.waitForSyncCalls(1)
+        let didClearPendingSync = await waitUntil {
+            await MainActor.run { !environment.hasPendingHabitSync }
+        }
+        XCTAssertTrue(didRetryPendingSync)
+        XCTAssertTrue(didClearPendingSync)
+        XCTAssertNil(environment.errorMessage)
+        XCTAssertEqual(environment.habit(id: editedHabit.id)?.name, editedHabit.name)
+    }
+
+    @MainActor
+    func testHabitLookupByIDReturnsLatestEditedHabit() async throws {
+        let localStore = LocalStore(
+            baseURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        )
+        let habitRepository = StubHabitRepository()
+        let environment = AppEnvironment(
+            authService: SupabaseAuthService(),
+            reminderService: NoopReminderService(),
+            widgetSyncService: WidgetSyncService(),
+            analyticsService: AnalyticsService(),
+            defaults: UserDefaults(suiteName: UUID().uuidString) ?? .standard,
+            localStore: localStore,
+            habitRepository: habitRepository,
+            checkInRepository: StubCheckInRepository()
+        )
+
+        let user = AppUser(id: UUID(), email: "test@example.com")
+        let originalHabit = Habit(
+            id: UUID(),
+            userId: user.id,
+            name: "Journal",
+            emojiOrIcon: "📝",
+            color: .moss,
+            schedule: .daily,
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: .now
+        )
+        let editedHabit = Habit(
+            id: originalHabit.id,
+            userId: originalHabit.userId,
+            name: "Morning Journal",
+            emojiOrIcon: originalHabit.emojiOrIcon,
+            color: .gold,
+            schedule: .weekdays([.tuesday, .thursday]),
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: originalHabit.createdAt
+        )
+
+        environment.currentUser = user
+        environment.habits = [originalHabit]
+        try await localStore.writeHabits([originalHabit])
+
+        _ = try await environment.createOrUpdateHabit(editedHabit)
+
+        XCTAssertEqual(environment.habit(id: originalHabit.id)?.name, "Morning Journal")
+        XCTAssertEqual(environment.habit(id: originalHabit.id)?.color, .gold)
+        XCTAssertEqual(environment.habit(id: originalHabit.id)?.schedule, .weekdays([.tuesday, .thursday]))
     }
 
     @MainActor
@@ -1440,6 +1628,77 @@ private actor TaskCompletionTracker {
     }
 }
 
+private actor RecoveringStubHabitRepository: HabitRepository {
+    private var habits: [Habit] = []
+    private var pendingHabit: Habit?
+    private var saveFailuresRemaining: Int
+    private var saveCallCount = 0
+    private var syncCallCount = 0
+
+    init(saveFailuresRemaining: Int) {
+        self.saveFailuresRemaining = saveFailuresRemaining
+    }
+
+    func fetchHabits() async throws -> [Habit] { habits }
+
+    func saveHabit(_ habit: Habit) async throws {
+        saveCallCount += 1
+        pendingHabit = habit
+
+        if saveFailuresRemaining > 0 {
+            saveFailuresRemaining -= 1
+            throw AppError.network("Remote unavailable")
+        }
+
+        upsert(habit)
+        pendingHabit = nil
+    }
+
+    func deleteHabit(_ habit: Habit) async throws {
+        habits.removeAll { $0.id == habit.id }
+        if pendingHabit?.id == habit.id {
+            pendingHabit = nil
+        }
+    }
+
+    func sync() async throws -> [Habit] {
+        syncCallCount += 1
+        if let pendingHabit {
+            upsert(pendingHabit)
+            self.pendingHabit = nil
+        }
+        return habits
+    }
+
+    func waitForSaveCalls(_ expectedCount: Int) async -> Bool {
+        for _ in 0..<50 {
+            if saveCallCount >= expectedCount {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return false
+    }
+
+    func waitForSyncCalls(_ expectedCount: Int) async -> Bool {
+        for _ in 0..<50 {
+            if syncCallCount >= expectedCount {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return false
+    }
+
+    private func upsert(_ habit: Habit) {
+        if let index = habits.firstIndex(where: { $0.id == habit.id }) {
+            habits[index] = habit
+        } else {
+            habits.append(habit)
+        }
+    }
+}
+
 private actor StubHabitRepository: HabitRepository {
     private var habits: [Habit] = []
 
@@ -1489,6 +1748,20 @@ private struct NoopReminderService: ReminderService {
     func requestAuthorization() async throws -> Bool { true }
     func rescheduleNotifications(for habits: [Habit]) async throws {}
     func clearAllNotifications() async {}
+}
+
+private func waitUntil(
+    attempts: Int = 50,
+    interval: Duration = .milliseconds(10),
+    condition: @escaping @Sendable () async -> Bool
+) async -> Bool {
+    for _ in 0..<attempts {
+        if await condition() {
+            return true
+        }
+        try? await Task.sleep(for: interval)
+    }
+    return false
 }
 
 @MainActor

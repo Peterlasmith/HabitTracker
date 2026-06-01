@@ -4,7 +4,7 @@ struct HabitEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var environment: AppEnvironment
 
-    let existingHabit: Habit?
+    let existingHabitID: Habit.ID?
 
     @State private var name = ""
     @State private var emoji = "🌿"
@@ -13,15 +13,21 @@ struct HabitEditorView: View {
     @State private var selectedWeekdays = Set(Weekday.allCases)
     @State private var remindersEnabled = false
     @State private var reminderDate = Calendar.current.date(from: DateComponents(hour: 8, minute: 0)) ?? .now
+    @State private var inlineErrorMessage: String?
+    @State private var isSaving = false
+    @State private var hasPopulatedExistingHabit = false
 
-    init(existingHabit: Habit? = nil) {
-        self.existingHabit = existingHabit
+    init(existingHabitID: Habit.ID? = nil) {
+        self.existingHabitID = existingHabitID
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 previewCard
+                if let inlineErrorMessage {
+                    inlineErrorCard(message: inlineErrorMessage)
+                }
                 identitySection
                 goalSection
                 scheduleSection
@@ -30,26 +36,42 @@ struct HabitEditorView: View {
             .padding(20)
             .padding(.bottom, 28)
         }
+        .disabled(isSaving)
         .scrollIndicators(.hidden)
-        .navigationTitle(existingHabit == nil ? "New Habit" : "Edit Habit")
+        .navigationTitle(existingHabitID == nil ? "New Habit" : "Edit Habit")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button("Cancel") { dismiss() }
+                    .disabled(isSaving)
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Save") {
+                Button {
                     Task {
-                        if await saveHabit() {
-                            dismiss()
-                        }
+                        await saveHabit()
+                    }
+                } label: {
+                    if isSaving {
+                        ProgressView()
+                            .tint(AppTheme.accent)
+                    } else {
+                        Text("Save")
                     }
                 }
-                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(isSaving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .onAppear(perform: populateIfNeeded)
+        .onChange(of: existingHabitID) { _, _ in
+            hasPopulatedExistingHabit = false
+            populateIfNeeded()
+        }
+    }
+
+    private var existingHabit: Habit? {
+        guard let existingHabitID else { return nil }
+        return environment.habit(id: existingHabitID)
     }
 
     private var previewCard: some View {
@@ -74,6 +96,16 @@ struct HabitEditorView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .appCard()
+    }
+
+    private func inlineErrorCard(message: String) -> some View {
+        Text(message)
+            .font(AppTheme.sans(size: 13, weight: .semibold))
+            .foregroundStyle(AppTheme.textPrimary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(AppTheme.errorBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     private var identitySection: some View {
@@ -205,7 +237,13 @@ struct HabitEditorView: View {
     }
 
     private func populateIfNeeded() {
-        guard let existingHabit else { return }
+        guard !hasPopulatedExistingHabit else { return }
+        guard let existingHabit else {
+            hasPopulatedExistingHabit = true
+            return
+        }
+
+        hasPopulatedExistingHabit = true
         name = existingHabit.name
         emoji = existingHabit.emojiOrIcon
         color = existingHabit.color
@@ -225,20 +263,31 @@ struct HabitEditorView: View {
         }
     }
 
-    private func saveHabit() async -> Bool {
+    private func saveHabit() async {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else { return false }
+        guard !trimmedName.isEmpty else { return }
 
         guard let habit = habitForSaving() else {
-            environment.errorMessage = "Your session expired. Sign in again to create a habit."
-            return false
+            inlineErrorMessage = existingHabitID == nil
+                ? "Your session expired. Sign in again to create a habit."
+                : "This habit is no longer available. Close this sheet and try again."
+            return
         }
 
         if remindersEnabled {
             environment.analyticsService.track(.enabledReminder)
         }
 
-        return await environment.createOrUpdateHabit(habit)
+        inlineErrorMessage = nil
+        isSaving = true
+        defer { isSaving = false }
+
+        do {
+            _ = try await environment.createOrUpdateHabit(habit)
+            dismiss()
+        } catch {
+            inlineErrorMessage = error.localizedDescription
+        }
     }
 
     private func habitForSaving() -> Habit? {
@@ -248,6 +297,8 @@ struct HabitEditorView: View {
         let userId: UUID
         if let existingHabit {
             userId = existingHabit.userId
+        } else if existingHabitID != nil {
+            return nil
         } else if let currentUser = environment.currentUser {
             userId = currentUser.id
         } else {

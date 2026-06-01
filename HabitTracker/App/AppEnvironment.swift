@@ -11,6 +11,11 @@ final class AppEnvironment: ObservableObject {
         case ready
     }
 
+    enum HabitSaveOutcome: Equatable {
+        case savedLocally
+        case syncPending
+    }
+
     @Published var phase: Phase = .launching
     @Published var currentUser: AppUser?
     @Published var habits: [Habit] = []
@@ -18,6 +23,7 @@ final class AppEnvironment: ObservableObject {
     @Published var errorMessage: String?
     @Published var isBusy = false
     @Published var recentlyDeletedAccountEmail: String?
+    @Published private(set) var hasPendingHabitSync = false
 
     let authService: SupabaseAuthService
     let habitRepository: HabitRepository
@@ -29,6 +35,8 @@ final class AppEnvironment: ObservableObject {
     private let defaults: UserDefaults
     private let localStore: LocalStore
     private let onboardingKey = "hasCompletedOnboarding"
+    private var habitSyncTask: Task<Void, Never>?
+    private static let pendingHabitSyncMessage = "Saved on this device. We'll sync when you're back online."
 
     // All properties are initialized on the main actor due to the enclosing class annotation.
     init(
@@ -141,35 +149,32 @@ final class AppEnvironment: ObservableObject {
         return result ?? false
     }
 
-    func createOrUpdateHabit(_ habit: Habit) async -> Bool {
+    func createOrUpdateHabit(_ habit: Habit) async throws -> HabitSaveOutcome {
         let previousHabits = self.habits
         let updatedHabits = self.upsertHabit(habit, in: previousHabits)
 
+        self.errorMessage = nil
         self.habits = updatedHabits
         do {
             try await self.localStore.writeHabits(updatedHabits)
+            try await self.reminderService.rescheduleNotifications(for: updatedHabits)
+            self.widgetSyncService.publish(habits: updatedHabits, completions: self.completions)
         } catch {
-            self.habits = previousHabits
-            self.errorMessage = error.localizedDescription
-            return false
-        }
-
-        let habitCopy = habit
-        let updatedHabitsCopy = updatedHabits
-        let didSave = await self.runBusyTask { [habitCopy, updatedHabitsCopy] in
-            try await self.habitRepository.saveHabit(habitCopy)
-            try await self.reminderService.rescheduleNotifications(for: updatedHabitsCopy)
-            await self.widgetSyncService.publish(habits: updatedHabitsCopy, completions: self.completions)
-            self.analyticsService.track(.createdHabit)
-            return true
-        } ?? false
-
-        guard didSave else {
             await self.rollbackHabits(to: previousHabits)
-            return false
+            throw error
         }
 
-        return true
+        self.analyticsService.track(.createdHabit)
+        return self.queueHabitSync(for: habit)
+    }
+
+    func retryPendingHabitSyncIfNeeded() {
+        guard self.currentUser != nil,
+              self.hasPendingHabitSync,
+              self.habitSyncTask == nil
+        else { return }
+
+        self.startPendingHabitSyncTask()
     }
 
     func enableReminderPermissions() async {
@@ -283,6 +288,11 @@ final class AppEnvironment: ObservableObject {
         latestCompletion(for: habit.id, on: date, from: self.completions)
     }
 
+    @MainActor
+    func habit(id: UUID) -> Habit? {
+        self.habits.first { $0.id == id }
+    }
+
     private func syncAll() async throws {
         async let syncedHabits = self.habitRepository.sync()
         async let syncedCompletions = self.checkInRepository.sync()
@@ -293,12 +303,18 @@ final class AppEnvironment: ObservableObject {
         await MainActor.run {
             self.habits = habits
             self.completions = filteredCompletions
+            self.hasPendingHabitSync = false
         }
         try? await self.localStore.writeCompletions(filteredCompletions)
         self.widgetSyncService.publish(habits: habits, completions: filteredCompletions)
+        self.clearPendingHabitSyncMessageIfNeeded()
     }
 
     private func clearPersistedUserState() async {
+        self.habitSyncTask?.cancel()
+        self.habitSyncTask = nil
+        self.hasPendingHabitSync = false
+        self.clearPendingHabitSyncMessageIfNeeded()
         await self.reminderService.clearAllNotifications()
         try? await self.localStore.clearAll()
         self.widgetSyncService.clearPublishedData()
@@ -330,11 +346,78 @@ final class AppEnvironment: ObservableObject {
         try? await self.reminderService.rescheduleNotifications(for: self.habits)
     }
 
+    private func queueHabitSync(for habit: Habit) -> HabitSaveOutcome {
+        if self.habitSyncTask != nil {
+            self.hasPendingHabitSync = true
+            return .syncPending
+        }
+
+        if self.hasPendingHabitSync {
+            self.startPendingHabitSyncTask()
+            return .syncPending
+        }
+
+        self.startHabitSaveTask(for: habit)
+        return .savedLocally
+    }
+
+    private func startHabitSaveTask(for habit: Habit) {
+        let habitCopy = habit
+        self.habitSyncTask = Task { @MainActor in
+            await self.finishHabitSaveTask(for: habitCopy)
+        }
+    }
+
+    private func finishHabitSaveTask(for habit: Habit) async {
+        do {
+            try await self.habitRepository.saveHabit(habit)
+        } catch {
+            self.hasPendingHabitSync = true
+            self.errorMessage = Self.pendingHabitSyncMessage
+            self.habitSyncTask = nil
+            return
+        }
+
+        let shouldFlushPendingSync = self.hasPendingHabitSync
+        self.habitSyncTask = nil
+
+        if shouldFlushPendingSync {
+            self.startPendingHabitSyncTask()
+        }
+    }
+
+    private func startPendingHabitSyncTask() {
+        guard self.habitSyncTask == nil else { return }
+
+        self.habitSyncTask = Task { @MainActor in
+            await self.finishPendingHabitSyncTask()
+        }
+    }
+
+    private func finishPendingHabitSyncTask() async {
+        do {
+            try await self.syncAll()
+            self.hasPendingHabitSync = false
+            self.clearPendingHabitSyncMessageIfNeeded()
+        } catch {
+            self.hasPendingHabitSync = true
+            self.errorMessage = Self.pendingHabitSyncMessage
+        }
+
+        self.habitSyncTask = nil
+    }
+
     private func rollbackHabits(to previousHabits: [Habit]) async {
         self.habits = previousHabits
         try? await self.localStore.writeHabits(previousHabits)
         try? await self.reminderService.rescheduleNotifications(for: previousHabits)
         self.widgetSyncService.publish(habits: previousHabits, completions: self.completions)
+    }
+
+    private func clearPendingHabitSyncMessageIfNeeded() {
+        if self.errorMessage == Self.pendingHabitSyncMessage {
+            self.errorMessage = nil
+        }
     }
 
     private func rollbackCompletions(to previousCompletions: [HabitCompletion]) async {
