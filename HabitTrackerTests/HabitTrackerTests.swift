@@ -103,6 +103,38 @@ final class HabitTrackerTests: XCTestCase {
         )
     }
 
+    func testCurrentCalendarDayStreakStaysActiveUntilEndOfToday() {
+        let habit = Habit(
+            id: UUID(),
+            userId: UUID(),
+            name: "Walk",
+            emojiOrIcon: "🚶",
+            color: .moss,
+            schedule: .daily,
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: .now
+        )
+
+        let calendar = utcCalendar
+        let referenceDate = makeDate(year: 2026, month: 6, day: 5, calendar: calendar)
+        let completions = [
+            makeCompletion(for: habit, year: 2026, month: 6, day: 4, calendar: calendar),
+            makeCompletion(for: habit, year: 2026, month: 6, day: 3, calendar: calendar)
+        ]
+
+        XCTAssertEqual(
+            StreakCalculator.currentCalendarDayStreak(
+                for: habit,
+                completions: completions,
+                referenceDate: referenceDate,
+                calendar: calendar
+            ),
+            2
+        )
+    }
+
     func testCurrentCalendarDayStreakForWeekdayHabitDoesNotSkipNonDueDays() {
         let habit = Habit(
             id: UUID(),

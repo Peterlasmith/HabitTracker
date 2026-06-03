@@ -351,8 +351,21 @@ enum StreakCalculator {
                 .map { calendar.startOfDay(for: $0.date) }
         )
 
+        let today = calendar.startOfDay(for: referenceDate)
+        let startingDay: Date
+
+        if normalizedCompletions.contains(today) {
+            startingDay = today
+        } else if let yesterday = calendar.date(byAdding: .day, value: -1, to: today),
+                  normalizedCompletions.contains(yesterday) {
+            // Keep the streak alive until the end of the current day.
+            startingDay = yesterday
+        } else {
+            startingDay = today
+        }
+
         var streak = 0
-        var cursor = calendar.startOfDay(for: referenceDate)
+        var cursor = startingDay
 
         while normalizedCompletions.contains(cursor) {
             streak += 1
