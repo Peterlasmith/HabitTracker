@@ -2,6 +2,12 @@ import XCTest
 @testable import HabitTracker
 
 final class HabitTrackerTests: XCTestCase {
+    private var utcCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar
+    }
+
     override func tearDown() {
         MockURLProtocol.requestHandler = nil
         super.tearDown()
@@ -30,6 +36,191 @@ final class HabitTrackerTests: XCTestCase {
         ]
 
         XCTAssertEqual(StreakCalculator.currentStreak(for: habit, completions: completions, referenceDate: today), 2)
+    }
+
+    func testCurrentCalendarDayStreakCountsConsecutiveDays() {
+        let habit = Habit(
+            id: UUID(),
+            userId: UUID(),
+            name: "Read",
+            emojiOrIcon: "📚",
+            color: .teal,
+            schedule: .daily,
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: .now
+        )
+
+        let calendar = utcCalendar
+        let referenceDate = makeDate(year: 2026, month: 6, day: 5, calendar: calendar)
+        let completions = [
+            makeCompletion(for: habit, year: 2026, month: 6, day: 5, calendar: calendar),
+            makeCompletion(for: habit, year: 2026, month: 6, day: 4, calendar: calendar),
+            makeCompletion(for: habit, year: 2026, month: 6, day: 3, calendar: calendar)
+        ]
+
+        XCTAssertEqual(
+            StreakCalculator.currentCalendarDayStreak(
+                for: habit,
+                completions: completions,
+                referenceDate: referenceDate,
+                calendar: calendar
+            ),
+            3
+        )
+    }
+
+    func testCurrentCalendarDayStreakStopsAtMissedDay() {
+        let habit = Habit(
+            id: UUID(),
+            userId: UUID(),
+            name: "Walk",
+            emojiOrIcon: "🚶",
+            color: .moss,
+            schedule: .daily,
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: .now
+        )
+
+        let calendar = utcCalendar
+        let referenceDate = makeDate(year: 2026, month: 6, day: 5, calendar: calendar)
+        let completions = [
+            makeCompletion(for: habit, year: 2026, month: 6, day: 5, calendar: calendar),
+            makeCompletion(for: habit, year: 2026, month: 6, day: 3, calendar: calendar)
+        ]
+
+        XCTAssertEqual(
+            StreakCalculator.currentCalendarDayStreak(
+                for: habit,
+                completions: completions,
+                referenceDate: referenceDate,
+                calendar: calendar
+            ),
+            1
+        )
+    }
+
+    func testCurrentCalendarDayStreakForWeekdayHabitDoesNotSkipNonDueDays() {
+        let habit = Habit(
+            id: UUID(),
+            userId: UUID(),
+            name: "Gym",
+            emojiOrIcon: "🏋️",
+            color: .rose,
+            schedule: .weekdays([.monday, .wednesday, .friday]),
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: .now
+        )
+
+        let calendar = utcCalendar
+        let referenceDate = makeDate(year: 2026, month: 6, day: 5, calendar: calendar)
+        let completions = [
+            makeCompletion(for: habit, year: 2026, month: 6, day: 5, calendar: calendar),
+            makeCompletion(for: habit, year: 2026, month: 6, day: 3, calendar: calendar)
+        ]
+
+        XCTAssertEqual(
+            StreakCalculator.currentCalendarDayStreak(
+                for: habit,
+                completions: completions,
+                referenceDate: referenceDate,
+                calendar: calendar
+            ),
+            1
+        )
+    }
+
+    func testTopSummaryStreakUsesHistoryOutsideVisibleYear() {
+        let calendar = utcCalendar
+        let referenceDate = makeDate(year: 2026, month: 1, day: 2, calendar: calendar)
+        let habit = Habit(
+            id: UUID(),
+            userId: UUID(),
+            name: "Journal",
+            emojiOrIcon: "📝",
+            color: .slate,
+            schedule: .daily,
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: makeDate(year: 2025, month: 12, day: 1, calendar: calendar)
+        )
+
+        let completionsByHabit: [UUID: [HabitCompletion]] = [
+            habit.id: [
+                makeCompletion(for: habit, year: 2026, month: 1, day: 2, calendar: calendar),
+                makeCompletion(for: habit, year: 2026, month: 1, day: 1, calendar: calendar),
+                makeCompletion(for: habit, year: 2025, month: 12, day: 31, calendar: calendar),
+                makeCompletion(for: habit, year: 2025, month: 12, day: 30, calendar: calendar)
+            ]
+        ]
+
+        XCTAssertEqual(
+            topSummaryStreak(
+                for: [habit],
+                referenceDate: referenceDate,
+                calendar: calendar,
+                completionHistory: { completionsByHabit[$0.id] ?? [] }
+            ),
+            4
+        )
+    }
+
+    func testTopSummaryStreakSelectsLongestActiveHabit() {
+        let calendar = utcCalendar
+        let referenceDate = makeDate(year: 2026, month: 6, day: 5, calendar: calendar)
+        let shorterHabit = Habit(
+            id: UUID(),
+            userId: UUID(),
+            name: "Stretch",
+            emojiOrIcon: "🧘",
+            color: .gold,
+            schedule: .daily,
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: .now
+        )
+        let longerHabit = Habit(
+            id: UUID(),
+            userId: UUID(),
+            name: "Read",
+            emojiOrIcon: "📚",
+            color: .teal,
+            schedule: .daily,
+            targetType: .binary,
+            targetCount: 1,
+            reminderTime: nil,
+            createdAt: .now
+        )
+
+        let completionsByHabit: [UUID: [HabitCompletion]] = [
+            shorterHabit.id: [
+                makeCompletion(for: shorterHabit, year: 2026, month: 6, day: 5, calendar: calendar),
+                makeCompletion(for: shorterHabit, year: 2026, month: 6, day: 4, calendar: calendar)
+            ],
+            longerHabit.id: [
+                makeCompletion(for: longerHabit, year: 2026, month: 6, day: 5, calendar: calendar),
+                makeCompletion(for: longerHabit, year: 2026, month: 6, day: 4, calendar: calendar),
+                makeCompletion(for: longerHabit, year: 2026, month: 6, day: 3, calendar: calendar),
+                makeCompletion(for: longerHabit, year: 2026, month: 6, day: 2, calendar: calendar)
+            ]
+        ]
+
+        XCTAssertEqual(
+            topSummaryStreak(
+                for: [shorterHabit, longerHabit],
+                referenceDate: referenceDate,
+                calendar: calendar,
+                completionHistory: { completionsByHabit[$0.id] ?? [] }
+            ),
+            4
+        )
     }
 
     func testLegacyCountHabitNormalizesToBinary() {
@@ -1463,6 +1654,29 @@ final class HabitTrackerTests: XCTestCase {
         XCTAssertEqual(environment.phase, .authentication)
         XCTAssertNil(environment.currentUser)
         XCTAssertNil(environment.recentlyDeletedAccountEmail)
+    }
+
+    private func makeDate(year: Int, month: Int, day: Int, calendar: Calendar) -> Date {
+        calendar.date(from: DateComponents(year: year, month: month, day: day))!
+    }
+
+    private func makeCompletion(
+        for habit: Habit,
+        year: Int,
+        month: Int,
+        day: Int,
+        calendar: Calendar,
+        count: Int = 1
+    ) -> HabitCompletion {
+        HabitCompletion(
+            id: UUID(),
+            habitId: habit.id,
+            userId: habit.userId,
+            date: makeDate(year: year, month: month, day: day, calendar: calendar),
+            count: count,
+            note: "",
+            createdAt: .now
+        )
     }
 }
 

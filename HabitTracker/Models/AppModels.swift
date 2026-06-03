@@ -338,4 +338,28 @@ enum StreakCalculator {
 
         return streak
     }
+
+    static func currentCalendarDayStreak(
+        for habit: Habit,
+        completions: [HabitCompletion],
+        referenceDate: Date = .now,
+        calendar: Calendar = .current
+    ) -> Int {
+        let normalizedCompletions = Set(
+            completions
+                .filter { normalizedCheckCount($0.count) > 0 }
+                .map { calendar.startOfDay(for: $0.date) }
+        )
+
+        var streak = 0
+        var cursor = calendar.startOfDay(for: referenceDate)
+
+        while normalizedCompletions.contains(cursor) {
+            streak += 1
+            guard let previous = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+            cursor = previous
+        }
+
+        return streak
+    }
 }

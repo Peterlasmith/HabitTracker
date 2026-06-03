@@ -21,7 +21,12 @@ struct TodayDashboardView: View {
         let habits = activeHabits
         let period = TrackerPeriod(scope: selectedScope, anchor: anchorDate, calendar: calendar, today: today)
         let weekSummary = currentWeekSummary(for: habits)
-        let topStreak = habits.map(currentStreak(for:)).max() ?? 0
+        let topStreak = topSummaryStreak(
+            for: habits,
+            referenceDate: today,
+            calendar: calendar,
+            completionHistory: habitCompletions(for:)
+        )
 
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -370,6 +375,22 @@ struct TodayDashboardView: View {
         let nextCount = normalizedCheckCount(current?.count ?? 0) > 0 ? 0 : 1
         await environment.recordCompletion(for: habit, count: nextCount, date: date)
     }
+}
+
+func topSummaryStreak(
+    for habits: [Habit],
+    referenceDate: Date,
+    calendar: Calendar,
+    completionHistory: (Habit) -> [HabitCompletion]
+) -> Int {
+    habits.map {
+        StreakCalculator.currentCalendarDayStreak(
+            for: $0,
+            completions: completionHistory($0),
+            referenceDate: referenceDate,
+            calendar: calendar
+        )
+    }.max() ?? 0
 }
 
 private struct WeekHabitCard: View {
