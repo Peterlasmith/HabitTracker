@@ -65,8 +65,8 @@ struct TodayDashboardView: View {
 
     private func topBar(habits: [Habit]) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 16) {
-                HStack(alignment: .center, spacing: 8) {
+            HStack(alignment: .center, spacing: 16) {
+                HStack(spacing: 8) {
                     Circle()
                         .fill(AppTheme.accent)
                         .frame(width: 18, height: 18)
