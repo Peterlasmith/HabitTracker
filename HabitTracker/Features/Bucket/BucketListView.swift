@@ -801,20 +801,11 @@ private struct BucketTimelineView: View {
 private struct BucketLayoutMetrics {
     let screenWidth: CGFloat
 
-    private var scale: CGFloat {
-        switch screenWidth {
-        case ..<360:
-            return 0.82
-        case ..<380:
-            return 0.87
-        case ..<400:
-            return 0.92
-        case ..<430:
-            return 0.97
-        default:
-            return 1.0
-        }
-    }
+    // Kept at 1.0 so the Bucket tab renders with the same fixed metrics as
+    // the Habits tab. Responsive down-scaling made the shared header (and the
+    // rest of the page) drift on narrower screens, so the two tabs no longer
+    // lined up when switching between them.
+    private var scale: CGFloat { 1.0 }
 
     private func scaled(_ value: CGFloat) -> CGFloat {
         value * scale
