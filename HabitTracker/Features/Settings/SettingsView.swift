@@ -146,7 +146,7 @@ private struct DeleteAccountView: View {
 
                     VStack(alignment: .leading, spacing: 12) {
                         consequenceRow("Your sign-in account is removed from Supabase Auth.")
-                        consequenceRow("Your habits, check-ins, streak history, and assistant access tokens are permanently erased.")
+                        consequenceRow("Your habits, bucket items, check-ins, streak history, and assistant access tokens are permanently erased.")
                         consequenceRow("Cached app data, widget summaries, and reminder notifications on this device are cleared immediately.")
                     }
                     .appCard(fill: AppTheme.surface)

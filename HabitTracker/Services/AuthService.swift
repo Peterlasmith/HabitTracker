@@ -454,7 +454,7 @@ struct StoredSession: Codable {
     let refreshToken: String?
 }
 
-private extension String {
+extension String {
     var nilIfEmpty: String? {
         isEmpty ? nil : self
     }

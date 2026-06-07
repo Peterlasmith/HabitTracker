@@ -266,7 +266,7 @@ private struct CompletionKey: Hashable {
     let day: Date
 }
 
-private extension Error {
+extension Error {
     var isExpiredSupabaseSession: Bool {
         let message = localizedDescription.lowercased()
         return message.contains("bad_jwt")
@@ -313,6 +313,28 @@ actor LocalStore {
 
     func writeDeletedHabits(_ deletedHabits: [DeletedHabitRecord]) async throws {
         try await write(deletedHabits, fileName: "deleted-habits.json")
+    }
+
+    func readBucketItems() async throws -> [BucketItem] {
+        let url = baseURL.appending(path: "bucket-items.json")
+        guard fileManager.fileExists(atPath: url.path()) else { return [] }
+        let data = try Data(contentsOf: url)
+        return try decoder.decode([BucketItem].self, from: data)
+    }
+
+    func writeBucketItems(_ items: [BucketItem]) async throws {
+        try await write(items, fileName: "bucket-items.json")
+    }
+
+    func readDeletedBucketItems() async throws -> [DeletedBucketItemRecord] {
+        let url = baseURL.appending(path: "deleted-bucket-items.json")
+        guard fileManager.fileExists(atPath: url.path()) else { return [] }
+        let data = try Data(contentsOf: url)
+        return try decoder.decode([DeletedBucketItemRecord].self, from: data)
+    }
+
+    func writeDeletedBucketItems(_ deletedItems: [DeletedBucketItemRecord]) async throws {
+        try await write(deletedItems, fileName: "deleted-bucket-items.json")
     }
 
     func readCompletions() async throws -> [HabitCompletion] {
@@ -636,12 +658,6 @@ struct HabitCompletionRow: Codable {
             note: note,
             createdAt: createdAt
         )
-    }
-}
-
-private extension String {
-    var nilIfEmpty: String? {
-        isEmpty ? nil : self
     }
 }
 

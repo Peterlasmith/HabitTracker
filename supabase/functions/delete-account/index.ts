@@ -46,6 +46,7 @@ Deno.serve(async (request) => {
 
     const deleted = {
       habits: await deleteRows("habits", user.id),
+      bucket_items: await deleteRows("bucket_items", user.id),
       habit_completions: await deleteRows("habit_completions", user.id),
       assistant_authorization_codes: await deleteRows("assistant_authorization_codes", user.id),
       assistant_access_tokens: await deleteRows("assistant_access_tokens", user.id),
@@ -56,6 +57,7 @@ Deno.serve(async (request) => {
     const verification = {
       auth_user_deleted: !(await authUserExists(user.id)),
       habits_remaining: await countRows("habits", user.id),
+      bucket_items_remaining: await countRows("bucket_items", user.id),
       habit_completions_remaining: await countRows("habit_completions", user.id),
       assistant_authorization_codes_remaining: await countRows("assistant_authorization_codes", user.id),
       assistant_access_tokens_remaining: await countRows("assistant_access_tokens", user.id),
@@ -64,6 +66,7 @@ Deno.serve(async (request) => {
     if (
       !verification.auth_user_deleted ||
       verification.habits_remaining > 0 ||
+      verification.bucket_items_remaining > 0 ||
       verification.habit_completions_remaining > 0 ||
       verification.assistant_authorization_codes_remaining > 0 ||
       verification.assistant_access_tokens_remaining > 0

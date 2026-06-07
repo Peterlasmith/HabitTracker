@@ -20,14 +20,17 @@ final class AppEnvironment: ObservableObject {
     @Published var currentUser: AppUser?
     @Published var habits: [Habit] = []
     @Published var completions: [HabitCompletion] = []
+    @Published var bucketItems: [BucketItem] = []
     @Published var errorMessage: String?
     @Published var isBusy = false
     @Published var recentlyDeletedAccountEmail: String?
     @Published private(set) var hasPendingHabitSync = false
+    @Published private(set) var hasPendingBucketSync = false
 
     let authService: SupabaseAuthService
     let habitRepository: HabitRepository
     let checkInRepository: CheckInRepository
+    let bucketRepository: BucketListRepository
     let reminderService: ReminderService
     let widgetSyncService: WidgetSyncService
     let analyticsService: AnalyticsService
@@ -36,7 +39,8 @@ final class AppEnvironment: ObservableObject {
     private let localStore: LocalStore
     private let onboardingKey = "hasCompletedOnboarding"
     private var habitSyncTask: Task<Void, Never>?
-    private static let pendingHabitSyncMessage = "Saved on this device. We'll sync when you're back online."
+    private var bucketSyncTask: Task<Void, Never>?
+    private static let pendingRemoteSyncMessage = "Saved on this device. We'll sync when you're back online."
 
     // All properties are initialized on the main actor due to the enclosing class annotation.
     init(
@@ -47,7 +51,8 @@ final class AppEnvironment: ObservableObject {
         defaults: UserDefaults,
         localStore: LocalStore? = nil,
         habitRepository: HabitRepository? = nil,
-        checkInRepository: CheckInRepository? = nil
+        checkInRepository: CheckInRepository? = nil,
+        bucketRepository: BucketListRepository? = nil
     ) {
         self.authService = authService
         self.reminderService = reminderService
@@ -57,8 +62,10 @@ final class AppEnvironment: ObservableObject {
         self.localStore = localStore ?? LocalStore()
 
         let remote = SupabaseHabitRemoteDataSource()
+        let bucketRemote = SupabaseBucketListRemoteDataSource()
         if let habitRepository { self.habitRepository = habitRepository } else { self.habitRepository = DefaultHabitRepository(localStore: self.localStore, remote: remote, authService: authService) }
         if let checkInRepository { self.checkInRepository = checkInRepository } else { self.checkInRepository = DefaultCheckInRepository(localStore: self.localStore, remote: remote, authService: authService) }
+        if let bucketRepository { self.bucketRepository = bucketRepository } else { self.bucketRepository = DefaultBucketListRepository(localStore: self.localStore, remote: bucketRemote, authService: authService) }
     }
 
     convenience init() {
@@ -177,6 +184,15 @@ final class AppEnvironment: ObservableObject {
         self.startPendingHabitSyncTask()
     }
 
+    func retryPendingBucketSyncIfNeeded() {
+        guard self.currentUser != nil,
+              self.hasPendingBucketSync,
+              self.bucketSyncTask == nil
+        else { return }
+
+        self.startPendingBucketSyncTask()
+    }
+
     func enableReminderPermissions() async {
         await self.runBusyTask {
             let isAuthorized = try await self.reminderService.requestAuthorization()
@@ -219,6 +235,84 @@ final class AppEnvironment: ObservableObject {
 
         guard didDelete else {
             await self.rollbackState(habits: previousHabits, completions: previousCompletions)
+            return
+        }
+    }
+
+    func createBucketItem(title: String, category: BucketCategory) async throws -> HabitSaveOutcome {
+        guard let user = self.currentUser else {
+            throw AppError.network("Your session expired. Sign in again to keep going.")
+        }
+
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else {
+            throw AppError.configuration("Bucket list items need a title.")
+        }
+
+        let now = Date()
+        let item = BucketItem(
+            id: UUID(),
+            userId: user.id,
+            title: trimmedTitle,
+            category: category,
+            completedAt: nil,
+            createdAt: now,
+            updatedAt: now
+        )
+        let outcome = try await self.saveBucketItem(item)
+        self.analyticsService.track(.createdBucketItem)
+        return outcome
+    }
+
+    func updateBucketItem(_ item: BucketItem) async throws -> HabitSaveOutcome {
+        let trimmedTitle = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else {
+            throw AppError.configuration("Bucket list items need a title.")
+        }
+
+        var updatedItem = item
+        updatedItem.title = trimmedTitle
+        updatedItem.updatedAt = .now
+        return try await self.saveBucketItem(updatedItem)
+    }
+
+    func toggleBucketItemCompletion(_ item: BucketItem, achievedDate: Date?) async throws -> HabitSaveOutcome {
+        var updatedItem = item
+        updatedItem.completedAt = item.completedAt == nil ? achievedDate : nil
+        updatedItem.updatedAt = .now
+        let outcome = try await self.saveBucketItem(updatedItem)
+        if updatedItem.completedAt != nil {
+            self.analyticsService.track(.completedBucketItem)
+        }
+        return outcome
+    }
+
+    func deleteBucketItem(_ item: BucketItem) async {
+        let previousItems = self.bucketItems
+        let updatedItems = previousItems.filter { $0.id != item.id }
+
+        self.bucketItems = updatedItems
+        do {
+            try await self.localStore.writeBucketItems(updatedItems)
+        } catch {
+            self.bucketItems = previousItems
+            try? await self.localStore.writeBucketItems(previousItems)
+            self.errorMessage = error.localizedDescription
+            return
+        }
+
+        let updatedItemsCopy = updatedItems
+        let itemCopy = item
+        let didDelete = await self.runBusyTask { [updatedItemsCopy, itemCopy] in
+            try await self.bucketRepository.deleteBucketItem(itemCopy)
+            await MainActor.run {
+                self.bucketItems = updatedItemsCopy
+            }
+            return true
+        } ?? false
+
+        guard didDelete else {
+            await self.rollbackBucketItems(to: previousItems)
             return
         }
     }
@@ -296,25 +390,33 @@ final class AppEnvironment: ObservableObject {
     private func syncAll() async throws {
         async let syncedHabits = self.habitRepository.sync()
         async let syncedCompletions = self.checkInRepository.sync()
+        async let syncedBucketItems = self.bucketRepository.sync()
         let habits = try await syncedHabits
         let completions = try await syncedCompletions
+        let bucketItems = try await syncedBucketItems
         let habitIDs = Set(habits.map(\.id))
         let filteredCompletions = self.normalizedCompletions(completions).filter { habitIDs.contains($0.habitId) }
         await MainActor.run {
             self.habits = habits
             self.completions = filteredCompletions
+            self.bucketItems = sortedBucketItems(bucketItems)
             self.hasPendingHabitSync = false
+            self.hasPendingBucketSync = false
+            self.clearPendingRemoteSyncMessageIfNeeded()
         }
         try? await self.localStore.writeCompletions(filteredCompletions)
+        try? await self.localStore.writeBucketItems(bucketItems)
         self.widgetSyncService.publish(habits: habits, completions: filteredCompletions)
-        self.clearPendingHabitSyncMessageIfNeeded()
     }
 
     private func clearPersistedUserState() async {
         self.habitSyncTask?.cancel()
         self.habitSyncTask = nil
+        self.bucketSyncTask?.cancel()
+        self.bucketSyncTask = nil
         self.hasPendingHabitSync = false
-        self.clearPendingHabitSyncMessageIfNeeded()
+        self.hasPendingBucketSync = false
+        self.clearPendingRemoteSyncMessageIfNeeded()
         await self.reminderService.clearAllNotifications()
         try? await self.localStore.clearAll()
         self.widgetSyncService.clearPublishedData()
@@ -322,6 +424,7 @@ final class AppEnvironment: ObservableObject {
             self.currentUser = nil
             self.habits = []
             self.completions = []
+            self.bucketItems = []
         }
     }
 
@@ -329,15 +432,18 @@ final class AppEnvironment: ObservableObject {
         do {
             let fetchedHabits = try await self.habitRepository.fetchHabits()
             let fetchedCompletions = try await self.checkInRepository.fetchCompletions()
+            let fetchedBucketItems = try await self.bucketRepository.fetchBucketItems()
             await MainActor.run {
                 self.habits = fetchedHabits
                 self.completions = self.normalizedCompletions(fetchedCompletions)
+                self.bucketItems = sortedBucketItems(fetchedBucketItems)
             }
             self.widgetSyncService.publish(habits: fetchedHabits, completions: self.normalizedCompletions(fetchedCompletions))
         } catch {
             await MainActor.run {
                 self.habits = []
                 self.completions = []
+                self.bucketItems = []
             }
         }
     }
@@ -361,6 +467,22 @@ final class AppEnvironment: ObservableObject {
         return .savedLocally
     }
 
+    private func saveBucketItem(_ item: BucketItem) async throws -> HabitSaveOutcome {
+        let previousItems = self.bucketItems
+        let updatedItems = self.upsertBucketItem(item, in: previousItems)
+
+        self.errorMessage = nil
+        self.bucketItems = updatedItems
+        do {
+            try await self.localStore.writeBucketItems(updatedItems)
+        } catch {
+            await self.rollbackBucketItems(to: previousItems)
+            throw error
+        }
+
+        return self.queueBucketSync(for: item)
+    }
+
     private func startHabitSaveTask(for habit: Habit) {
         let habitCopy = habit
         self.habitSyncTask = Task { @MainActor in
@@ -373,7 +495,7 @@ final class AppEnvironment: ObservableObject {
             try await self.habitRepository.saveHabit(habit)
         } catch {
             self.hasPendingHabitSync = true
-            self.errorMessage = Self.pendingHabitSyncMessage
+            self.errorMessage = Self.pendingRemoteSyncMessage
             self.habitSyncTask = nil
             return
         }
@@ -398,13 +520,74 @@ final class AppEnvironment: ObservableObject {
         do {
             try await self.syncAll()
             self.hasPendingHabitSync = false
-            self.clearPendingHabitSyncMessageIfNeeded()
+            self.clearPendingRemoteSyncMessageIfNeeded()
         } catch {
             self.hasPendingHabitSync = true
-            self.errorMessage = Self.pendingHabitSyncMessage
+            self.errorMessage = Self.pendingRemoteSyncMessage
         }
 
         self.habitSyncTask = nil
+    }
+
+    private func queueBucketSync(for item: BucketItem) -> HabitSaveOutcome {
+        if self.bucketSyncTask != nil {
+            self.hasPendingBucketSync = true
+            return .syncPending
+        }
+
+        if self.hasPendingBucketSync {
+            self.startPendingBucketSyncTask()
+            return .syncPending
+        }
+
+        self.startBucketSaveTask(for: item)
+        return .savedLocally
+    }
+
+    private func startBucketSaveTask(for item: BucketItem) {
+        let itemCopy = item
+        self.bucketSyncTask = Task { @MainActor in
+            await self.finishBucketSaveTask(for: itemCopy)
+        }
+    }
+
+    private func finishBucketSaveTask(for item: BucketItem) async {
+        do {
+            try await self.bucketRepository.saveBucketItem(item)
+        } catch {
+            self.hasPendingBucketSync = true
+            self.errorMessage = Self.pendingRemoteSyncMessage
+            self.bucketSyncTask = nil
+            return
+        }
+
+        let shouldFlushPendingSync = self.hasPendingBucketSync
+        self.bucketSyncTask = nil
+
+        if shouldFlushPendingSync {
+            self.startPendingBucketSyncTask()
+        }
+    }
+
+    private func startPendingBucketSyncTask() {
+        guard self.bucketSyncTask == nil else { return }
+
+        self.bucketSyncTask = Task { @MainActor in
+            await self.finishPendingBucketSyncTask()
+        }
+    }
+
+    private func finishPendingBucketSyncTask() async {
+        do {
+            try await self.syncAll()
+            self.hasPendingBucketSync = false
+            self.clearPendingRemoteSyncMessageIfNeeded()
+        } catch {
+            self.hasPendingBucketSync = true
+            self.errorMessage = Self.pendingRemoteSyncMessage
+        }
+
+        self.bucketSyncTask = nil
     }
 
     private func rollbackHabits(to previousHabits: [Habit]) async {
@@ -414,8 +597,15 @@ final class AppEnvironment: ObservableObject {
         self.widgetSyncService.publish(habits: previousHabits, completions: self.completions)
     }
 
-    private func clearPendingHabitSyncMessageIfNeeded() {
-        if self.errorMessage == Self.pendingHabitSyncMessage {
+    private func rollbackBucketItems(to previousItems: [BucketItem]) async {
+        self.bucketItems = previousItems
+        try? await self.localStore.writeBucketItems(previousItems)
+    }
+
+    private func clearPendingRemoteSyncMessageIfNeeded() {
+        if !self.hasPendingHabitSync,
+           !self.hasPendingBucketSync,
+           self.errorMessage == Self.pendingRemoteSyncMessage {
             self.errorMessage = nil
         }
     }
@@ -454,6 +644,16 @@ final class AppEnvironment: ObservableObject {
             updatedHabits.append(habit)
         }
         return updatedHabits.sorted { $0.createdAt < $1.createdAt }
+    }
+
+    private func upsertBucketItem(_ item: BucketItem, in items: [BucketItem]) -> [BucketItem] {
+        var updatedItems = items
+        if let index = updatedItems.firstIndex(where: { $0.id == item.id }) {
+            updatedItems[index] = item
+        } else {
+            updatedItems.append(item)
+        }
+        return sortedBucketItems(updatedItems)
     }
 
     private func upsertCompletion(_ completion: HabitCompletion, in completions: [HabitCompletion]) -> [HabitCompletion] {

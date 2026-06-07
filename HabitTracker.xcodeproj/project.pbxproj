@@ -28,6 +28,9 @@
 		000000000000000000000120 /* HabitTrackerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000220 /* HabitTrackerUITests.swift */; };
 		000000000000000000000121 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000225 /* Assets.xcassets */; };
 		000000000000000000000122 /* Habits/HabitManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000226 /* Habits/HabitManagerView.swift */; };
+		000000000000000000000123 /* BucketListRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000227 /* BucketListRepository.swift */; };
+		000000000000000000000124 /* Bucket/BucketListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000228 /* Bucket/BucketListView.swift */; };
+		000000000000000000000125 /* BucketListTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000229 /* BucketListTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -73,6 +76,9 @@
 		000000000000000000000224 /* HabitTrackerWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HabitTrackerWidget.entitlements; sourceTree = "<group>"; };
 		000000000000000000000225 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		000000000000000000000226 /* Habits/HabitManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Habits/HabitManagerView.swift; sourceTree = "<group>"; };
+		000000000000000000000227 /* BucketListRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BucketListRepository.swift; sourceTree = "<group>"; };
+		000000000000000000000228 /* Bucket/BucketListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bucket/BucketListView.swift; sourceTree = "<group>"; };
+		000000000000000000000229 /* BucketListTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BucketListTests.swift; sourceTree = "<group>"; };
 		000000000000000000000501 /* HabitTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = HabitTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		000000000000000000000502 /* HabitTrackerWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; path = HabitTrackerWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		000000000000000000000503 /* HabitTrackerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = HabitTrackerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -150,6 +156,7 @@
 			children = (
 				000000000000000000000218 /* HabitTrackerTests.swift */,
 				000000000000000000000219 /* RepositoryMappingTests.swift */,
+				000000000000000000000229 /* BucketListTests.swift */,
 			);
 			path = HabitTrackerTests;
 			sourceTree = "<group>";
@@ -196,6 +203,7 @@
 			children = (
 				000000000000000000000209 /* Onboarding/OnboardingView.swift */,
 				000000000000000000000210 /* Auth/AuthView.swift */,
+				000000000000000000000228 /* Bucket/BucketListView.swift */,
 				000000000000000000000211 /* Dashboard/TodayDashboardView.swift */,
 				000000000000000000000212 /* Habits/HabitEditorView.swift */,
 				000000000000000000000213 /* Habits/HabitDetailView.swift */,
@@ -218,6 +226,7 @@
 			isa = PBXGroup;
 			children = (
 				000000000000000000000206 /* HabitRepository.swift */,
+				000000000000000000000227 /* BucketListRepository.swift */,
 			);
 			path = Repositories;
 			sourceTree = "<group>";
@@ -397,10 +406,12 @@
 				000000000000000000000104 /* AppTheme.swift in Sources */,
 				000000000000000000000105 /* AppModels.swift in Sources */,
 				000000000000000000000106 /* HabitRepository.swift in Sources */,
+				000000000000000000000123 /* BucketListRepository.swift in Sources */,
 				000000000000000000000107 /* AuthService.swift in Sources */,
 				000000000000000000000108 /* SupportServices.swift in Sources */,
 				000000000000000000000109 /* Onboarding/OnboardingView.swift in Sources */,
 				000000000000000000000110 /* Auth/AuthView.swift in Sources */,
+				000000000000000000000124 /* Bucket/BucketListView.swift in Sources */,
 				000000000000000000000111 /* Dashboard/TodayDashboardView.swift in Sources */,
 				000000000000000000000112 /* Habits/HabitEditorView.swift in Sources */,
 				000000000000000000000113 /* Habits/HabitDetailView.swift in Sources */,
@@ -424,6 +435,7 @@
 			files = (
 				000000000000000000000118 /* HabitTrackerTests.swift in Sources */,
 				000000000000000000000119 /* RepositoryMappingTests.swift in Sources */,
+				000000000000000000000125 /* BucketListTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -460,7 +472,7 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = HabitTracker/Support/HabitTracker.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1.002;
+				CURRENT_PROJECT_VERSION = 1.004;
 				DEVELOPMENT_TEAM = PL3TQ7WFB8;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_TESTABILITY = YES;
@@ -471,7 +483,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.done.HabitTracker;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -490,7 +502,7 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = HabitTracker/Support/HabitTracker.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1.002;
+				CURRENT_PROJECT_VERSION = 1.100;
 				DEVELOPMENT_TEAM = PL3TQ7WFB8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -500,7 +512,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.done.HabitTracker;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -517,12 +529,12 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = HabitTracker/Support/HabitTrackerWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 10;
 				DEVELOPMENT_TEAM = PL3TQ7WFB8;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "HabitTracker/Support/HabitTrackerWidget-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.done.HabitTracker.widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -539,12 +551,12 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = HabitTracker/Support/HabitTrackerWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 10;
 				DEVELOPMENT_TEAM = PL3TQ7WFB8;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "HabitTracker/Support/HabitTrackerWidget-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.done.HabitTracker.widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;

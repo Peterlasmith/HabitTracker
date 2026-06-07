@@ -139,8 +139,10 @@ enum AnalyticsEvent: String {
     case createdAccount
     case signedIn
     case createdHabit
+    case createdBucketItem
     case enabledReminder
     case completedHabit
+    case completedBucketItem
 }
 
 enum AppLogger {

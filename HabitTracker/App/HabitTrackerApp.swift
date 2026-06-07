@@ -15,6 +15,7 @@ struct HabitTrackerApp: App {
                 .onChange(of: scenePhase) { _, newPhase in
                     if newPhase == .active {
                         environment.retryPendingHabitSyncIfNeeded()
+                        environment.retryPendingBucketSyncIfNeeded()
                     }
                 }
         }

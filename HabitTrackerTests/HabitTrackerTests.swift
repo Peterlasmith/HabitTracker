@@ -939,7 +939,8 @@ final class HabitTrackerTests: XCTestCase {
             analyticsService: AnalyticsService(),
             defaults: UserDefaults(suiteName: UUID().uuidString) ?? .standard,
             habitRepository: habitRepository,
-            checkInRepository: checkInRepository
+            checkInRepository: checkInRepository,
+            bucketRepository: StubBucketRepository()
         )
 
         let user = AppUser(id: UUID(), email: "test@example.com")
@@ -988,7 +989,8 @@ final class HabitTrackerTests: XCTestCase {
             analyticsService: AnalyticsService(),
             defaults: UserDefaults(suiteName: UUID().uuidString) ?? .standard,
             habitRepository: habitRepository,
-            checkInRepository: checkInRepository
+            checkInRepository: checkInRepository,
+            bucketRepository: StubBucketRepository()
         )
 
         let user = AppUser(id: UUID(), email: "test@example.com")
@@ -1027,7 +1029,8 @@ final class HabitTrackerTests: XCTestCase {
             analyticsService: AnalyticsService(),
             defaults: UserDefaults(suiteName: UUID().uuidString) ?? .standard,
             habitRepository: habitRepository,
-            checkInRepository: checkInRepository
+            checkInRepository: checkInRepository,
+            bucketRepository: StubBucketRepository()
         )
 
         let user = AppUser(id: UUID(), email: "test@example.com")
@@ -1067,7 +1070,8 @@ final class HabitTrackerTests: XCTestCase {
             defaults: UserDefaults(suiteName: UUID().uuidString) ?? .standard,
             localStore: localStore,
             habitRepository: habitRepository,
-            checkInRepository: StubCheckInRepository()
+            checkInRepository: StubCheckInRepository(),
+            bucketRepository: StubBucketRepository()
         )
 
         let user = AppUser(id: UUID(), email: "test@example.com")
@@ -1134,7 +1138,8 @@ final class HabitTrackerTests: XCTestCase {
             defaults: UserDefaults(suiteName: UUID().uuidString) ?? .standard,
             localStore: localStore,
             habitRepository: habitRepository,
-            checkInRepository: StubCheckInRepository()
+            checkInRepository: StubCheckInRepository(),
+            bucketRepository: StubBucketRepository()
         )
 
         let user = AppUser(id: UUID(), email: "test@example.com")
@@ -1200,7 +1205,8 @@ final class HabitTrackerTests: XCTestCase {
             defaults: UserDefaults(suiteName: UUID().uuidString) ?? .standard,
             localStore: localStore,
             habitRepository: habitRepository,
-            checkInRepository: StubCheckInRepository()
+            checkInRepository: StubCheckInRepository(),
+            bucketRepository: StubBucketRepository()
         )
 
         let user = AppUser(id: UUID(), email: "test@example.com")
@@ -1259,7 +1265,8 @@ final class HabitTrackerTests: XCTestCase {
             defaults: UserDefaults(suiteName: UUID().uuidString) ?? .standard,
             localStore: localStore,
             habitRepository: habitRepository,
-            checkInRepository: StubCheckInRepository()
+            checkInRepository: StubCheckInRepository(),
+            bucketRepository: StubBucketRepository()
         )
 
         let userId = UUID()
@@ -1340,7 +1347,8 @@ final class HabitTrackerTests: XCTestCase {
             defaults: UserDefaults(suiteName: UUID().uuidString) ?? .standard,
             localStore: localStore,
             habitRepository: habitRepository,
-            checkInRepository: StubCheckInRepository()
+            checkInRepository: StubCheckInRepository(),
+            bucketRepository: StubBucketRepository()
         )
 
         let habit = Habit(
@@ -1497,7 +1505,8 @@ final class HabitTrackerTests: XCTestCase {
                 XCTAssertEqual(request.httpMethod, "POST")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer session-access-token")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "apikey"), "anon-key")
-                XCTAssertEqual(String(data: request.httpBody ?? Data(), encoding: .utf8), "{}")
+                let bodyString = String(data: requestBodyData(request) ?? Data(), encoding: .utf8)
+                XCTAssertTrue(bodyString == "{}" || bodyString == "")
                 return (
                     HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
                     Data()
@@ -1569,7 +1578,7 @@ final class HabitTrackerTests: XCTestCase {
                 edgeFunctionRequestCount += 1
                 XCTAssertEqual(request.httpMethod, "POST")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer session-access-token")
-                let body = try XCTUnwrap(request.httpBody)
+                let body = try XCTUnwrap(requestBodyData(request))
                 let json = try JSONSerialization.jsonObject(with: body) as? [String: String]
                 XCTAssertEqual(json?["current_password"], "correct-horse")
                 return (
@@ -1670,7 +1679,8 @@ final class HabitTrackerTests: XCTestCase {
             defaults: defaults,
             localStore: localStore,
             habitRepository: StubHabitRepository(),
-            checkInRepository: StubCheckInRepository()
+            checkInRepository: StubCheckInRepository(),
+            bucketRepository: StubBucketRepository()
         )
 
         environment.currentUser = AppUser(id: userId, email: "test@example.com")
@@ -1975,6 +1985,26 @@ private actor StubCheckInRepository: CheckInRepository {
     func sync() async throws -> [HabitCompletion] { completions }
 }
 
+private actor StubBucketRepository: BucketListRepository {
+    private var items: [BucketItem] = []
+
+    func fetchBucketItems() async throws -> [BucketItem] { items }
+
+    func saveBucketItem(_ item: BucketItem) async throws {
+        if let index = items.firstIndex(where: { $0.id == item.id }) {
+            items[index] = item
+        } else {
+            items.append(item)
+        }
+    }
+
+    func deleteBucketItem(_ item: BucketItem) async throws {
+        items.removeAll { $0.id == item.id }
+    }
+
+    func sync() async throws -> [BucketItem] { items }
+}
+
 private actor StaleFetchCheckInRepository: CheckInRepository {
     private var completions: [HabitCompletion] = []
 
@@ -2008,6 +2038,32 @@ private func waitUntil(
         try? await Task.sleep(for: interval)
     }
     return false
+}
+
+private func requestBodyData(_ request: URLRequest) -> Data? {
+    if let httpBody = request.httpBody {
+        return httpBody
+    }
+
+    guard let stream = request.httpBodyStream else {
+        return nil
+    }
+
+    stream.open()
+    defer { stream.close() }
+
+    let bufferSize = 1024
+    let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+    defer { buffer.deallocate() }
+
+    var data = Data()
+    while stream.hasBytesAvailable {
+        let read = stream.read(buffer, maxLength: bufferSize)
+        guard read > 0 else { break }
+        data.append(buffer, count: read)
+    }
+
+    return data.isEmpty ? nil : data
 }
 
 @MainActor

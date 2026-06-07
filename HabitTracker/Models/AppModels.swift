@@ -252,6 +252,52 @@ struct HabitCompletion: Codable, Equatable, Identifiable {
     var createdAt: Date
 }
 
+enum BucketCategory: String, Codable, CaseIterable, Identifiable {
+    case travel
+    case adventure
+    case skills
+    case experiences
+    case milestones
+    case giving
+    case other
+
+    var id: String { rawValue }
+
+    static var prototypeCases: [BucketCategory] {
+        [.travel, .adventure, .skills, .experiences, .milestones, .giving]
+    }
+
+    var title: String {
+        switch self {
+        case .travel: return "Travel"
+        case .adventure: return "Adventure"
+        case .skills: return "Skills"
+        case .experiences: return "Experiences"
+        case .milestones: return "Milestones"
+        case .giving: return "Giving"
+        case .other: return "Other"
+        }
+    }
+
+    var sortIndex: Int {
+        BucketCategory.allCases.firstIndex(of: self) ?? BucketCategory.allCases.count
+    }
+}
+
+struct BucketItem: Codable, Equatable, Identifiable {
+    var id: UUID
+    var userId: UUID
+    var title: String
+    var category: BucketCategory
+    var completedAt: Date?
+    var createdAt: Date
+    var updatedAt: Date
+
+    var isCompleted: Bool {
+        completedAt != nil
+    }
+}
+
 func normalizedCheckCount(_ count: Int) -> Int {
     count > 0 ? 1 : 0
 }
